@@ -1,0 +1,1624 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Festivalfieber – Akt 1 (Prototyp)</title>
+<style>
+  html,body{margin:0;height:100%;background:#241f2e;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  #wrap{position:relative}
+  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+  .pixinput{position:absolute;display:none;font-family:"Courier New",monospace;font-weight:bold;
+    background:#fdf3dc;border:3px solid #5a4632;color:#3b2f2f;padding:2px 6px;outline:none;box-sizing:border-box}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="480" height="320"></canvas>
+  <input id="nameInput" class="pixinput" maxlength="12" placeholder="Dein Name">
+  <input id="friendInput" class="pixinput" maxlength="12" placeholder="Name eingeben">
+</div>
+<script>
+"use strict";
+/* =====================================================================
+   FESTIVALFIEBER – Akt 1: Aufbau (Prototyp)
+   Ein Top-Down-Pixel-Adventure. Alles in einer Datei, keine Assets:
+   sämtliche Grafik wird im Code erzeugt.
+   Aufbau des Codes (Abschnitte):
+   0. Stellschrauben (Werte zum Rumspielen)
+   1. Grundgerüst (Canvas, Skalierung, Spielzustand)
+   2. Hilfsfunktionen
+   3. Paletten & Charaktererstellungs-Optionen
+   4. Pixel-Sprites (Figuren, Portraits, Item-Icons)
+   5. Welt (Karte, Zelte, Bäume, Klos ...)
+   6. Figuren & Bewegung
+   7. Inventar, Status, Journal, Toasts
+   8. Rauch-Mechanik
+   9. Dialogsystem + alle Dialoge
+   10. Interaktion
+   11. UI (HUD, Menü, Dialogbox, Charaktererstellung)
+   12. Intro-Sequenz & Hauptschleife
+   ===================================================================== */
+
+/* ============ 0. STELLSCHRAUBEN ============
+   Hier darfst du gefahrlos Werte ändern und einfach neu laden (F5). */
+const CFG = {
+  IDLE_SMOKE_SEC: 15,        // Sekunden Stillstand, bis gedreht wird (final: 30)
+  ROLL_SEC: 2.5,             // Dauer der Dreh-Animation
+  GLASSES_BREAK_CHANCE: 0.2, // Chance, dass die Brille nach einem Gespräch bricht
+  ENERGY_DRAIN_IDLE: 0.12,   // Energieverlust pro Sekunde im Stehen
+  ENERGY_DRAIN_MOVE: 0.7,    // Energieverlust pro Sekunde beim Laufen
+  APPLE_ENERGY: 15,
+  MUESLI_ENERGY: 25,
+  PLAYER_SPEED: 70,          // Pixel pro Sekunde
+  TYPE_SPEED: 45,            // Buchstaben pro Sekunde im Dialog
+  ASH_CAPACITY: 10,          // Fassungsvermögen Taschenascher
+  LITTER_PENALTY: 0.5        // Sympathie-Abzug bei allen, wenn Stummel auf den Boden fliegt
+};
+
+/* ============ 1. GRUNDGERÜST ============ */
+const GAME_W = 480, GAME_H = 320, TILE = 16;
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const nameInput = document.getElementById('nameInput');
+const friendInput = document.getElementById('friendInput');
+let SCALE = 1;
+let camX = 0, camY = 0;
+
+// Der zentrale Spielzustand: alles, was sich im Spiel verändert, lebt hier.
+const state = {
+  mode: 'create',            // 'create' (Charaktererstellung) oder 'game'
+  cutscene: false,           // true = Intro läuft, Steuerung gesperrt
+  dialog: null,              // aktives Gespräch (oder null)
+  menu: null,                // offenes Menü {tab, sel} (oder null)
+  whiteAlpha: 0,             // aktuelle Überblendung (0 = klar, 1 = weiß)
+  whiteTarget: 0,            // Ziel, dem sich whiteAlpha sanft annähert
+  time: 0,
+  playerName: 'Alex',
+  friendName: null,          // wird im Intro gesetzt
+  flags: { askedWho:false, askedGlasses:false, introDone:false, lowEnergyWarned:false },
+  journal: { missions: [], memories: [] },
+  sympathy: [
+    { id:'harvey', name:'Harvey', val: 1 },
+    { id:'friend', name:'???',    val: -1 },
+    { id:'momo',   name:'???',    val: -3 },
+    { id:'kip',    name:'???',    val: -2 }
+  ],
+  energy: 72,
+  social: 60,
+  inv: [ {id:'tape', n:1}, {id:'apple', n:2}, {id:'muesli', n:1} ],
+  wearingGlasses: false,
+  ashtray: 0,
+  idleSince: 0,
+  smoke: { phase:'none', t:0 },   // 'none' | 'rolling' | 'smoking'
+  helpTimer: 0
+};
+
+/* ============ 2. HILFSFUNKTIONEN ============ */
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+// Kleiner deterministischer Zufallsgenerator (damit die Wiese immer gleich aussieht)
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function deNum(v){ return (Math.round(v*10)/10).toString().replace('.',','); }
+
+/* ============ 3. PALETTEN & ERSTELLUNGS-OPTIONEN ============ */
+const SKINS = [
+  {s:'#f8d8b8', S:'#e2b48e'},
+  {s:'#eec39a', S:'#d1a06f'},
+  {s:'#d29b6c', S:'#b57c4e'},
+  {s:'#a9713f', S:'#8a5730'},
+  {s:'#7c5030', S:'#603a20'}
+];
+const HAIRS = [
+  {h:'#8a5a2b', d:'#6d4420'},  // braun
+  {h:'#3a3038', d:'#241d22'},  // schwarz
+  {h:'#e8c860', d:'#c9a63f'},  // blond
+  {h:'#c9602f', d:'#a3441c'},  // rot
+  {h:'#5e8f4e', d:'#44703a'},  // grün
+  {h:'#c96f9b', d:'#a44f7d'}   // pink
+];
+const OUTFITS = [
+  {c:'#d95f43', k:'#b34531'},  // koralle
+  {c:'#4f8fbf', k:'#3a6f99'},  // blau
+  {c:'#68a357', k:'#4f8442'},  // grün
+  {c:'#c9a03f', k:'#a8842f'},  // senf
+  {c:'#9b6fc9', k:'#7d54a8'},  // lila
+  {c:'#e0ded2', k:'#bdbaab'}   // weiß
+];
+const creation = { skin:1, hair:0, outfit:2, face:'down', t:0 };
+const FACE_CYCLE = ['down','left','up','right'];
+
+// Baut aus den gewählten Farben die Farbtabelle für die Spielfigur
+function playerPal(){
+  const s=SKINS[creation.skin], h=HAIRS[creation.hair], o=OUTFITS[creation.outfit];
+  return { o:'#4a3a35', h:h.h, d:h.d, s:s.s, S:s.S, e:'#2e2430',
+           c:o.c, k:o.k, p:'#474c66', b:'#6d4a2f' };
+}
+const HARVEY_PAL = { o:'#4a3a35', t:'#77714a', T:'#5b5636', s:'#eec39a', S:'#d1a06f',
+                     e:'#2e2430', f:'#cfc6b8', h:'#cfc6b8', d:'#b7ad9e',
+                     c:'#5c7d5a', k:'#48644a', p:'#5d5346', b:'#4f3a28' };
+const FRIEND_PAL = { o:'#4a3a35', h:'#e8c860', d:'#c9a63f', s:'#f8d8b8', S:'#e2b48e',
+                     e:'#2e2430', c:'#f2ead8', k:'#ddd2ba', p:'#f2ead8', b:'#b98d5a' };
+
+/* ============ 4. PIXEL-SPRITES ============
+   Figuren sind kleine "Text-Bilder": jedes Zeichen steht für eine Farbe.
+   o=Umriss  h/d=Haar  s/S=Haut  e=Augen  c/k=Oberteil  p=Hose  b=Schuhe
+   t/T=Hut   f=Bart    .=durchsichtig                                     */
+const BODY_DOWN = [
+  "....oooo....",
+  "..oohhhhoo..",
+  ".ohhhhhhhho.",
+  ".ohhhhhhhho.",
+  ".ohssssssho.",
+  ".ohsessesho.",
+  ".ohssssssho.",
+  "..osssssso..",
+  "..occcccco..",
+  ".osccccccso.",
+  ".osckkkkcso.",
+  "..occcccco..",
+  "..oppppppo..",
+  "..opp..ppo..",
+  "..obb..bbo..",
+  "...oo..oo..."
+];
+const BODY_UP = [
+  "....oooo....",
+  "..oohhhhoo..",
+  ".ohhhhhhhho.",
+  ".ohhhhhhhho.",
+  ".ohhhhhhhho.",
+  ".ohhhhhhhho.",
+  ".ohddddddho.",
+  "..osssssso..",
+  "..occcccco..",
+  ".osccccccso.",
+  ".osccccccso.",
+  "..occcccco..",
+  "..oppppppo..",
+  "..opp..ppo..",
+  "..obb..bbo..",
+  "...oo..oo..."
+];
+const BODY_SIDE = [   // schaut nach links; rechts = gespiegelt
+  "....oooo....",
+  "..oohhhhoo..",
+  ".ohhhhhhhho.",
+  ".ohhhhhhhho.",
+  ".ossshhhhho.",
+  ".osesdhhhho.",
+  ".ossshhhhho.",
+  "..osssssso..",
+  "..occcccco..",
+  ".oscccccco..",
+  ".osckkkkco..",
+  "..occcccco..",
+  "..oppppppo..",
+  "..opp..ppo..",
+  "..obb..bbo..",
+  "...oo..oo..."
+];
+// Bein-Varianten für die Lauf-Animation (ersetzen die letzten 3 Zeilen)
+const LEGS_IDLE = ["..opp..ppo..","..obb..bbo..","...oo..oo..."];
+const LEGS_A    = ["..opp..ppo..","..obb..bbo..","...oo......."];
+const LEGS_B    = ["..opp..ppo..","..obb..bbo..",".......oo..."];
+
+// Harvey: gleicher Körper, aber eigener Kopf mit Hut & Bart
+const HARVEY_HEAD_DOWN = [
+  "...tttttt...",
+  "..tttttttt..",
+  ".TTTTTTTTTT.",
+  ".osssssssso.",
+  ".osesssseso.",
+  ".offffffffo.",
+  "..offffffo..",
+  "..offffffo.."
+];
+const HARVEY_HEAD_UP = [
+  "...tttttt...",
+  "..tttttttt..",
+  ".TTTTTTTTTT.",
+  ".offffffffo.",
+  ".offffffffo.",
+  ".offffffffo.",
+  "..offffffo..",
+  "..osssssso.."
+];
+const HARVEY_HEAD_SIDE = [
+  "...tttttt...",
+  "..tttttttt..",
+  ".TTTTTTTTTT.",
+  ".ossssffffo.",
+  ".osesfffffo.",
+  ".osfffffffo.",
+  "..offffffo..",
+  "..offffffo.."
+];
+const HARVEY_DOWN = HARVEY_HEAD_DOWN.concat(BODY_DOWN.slice(8));
+const HARVEY_UP   = HARVEY_HEAD_UP.concat(BODY_UP.slice(8));
+const HARVEY_SIDE = HARVEY_HEAD_SIDE.concat(BODY_SIDE.slice(8));
+
+const PLAYER_GRIDS = { down:BODY_DOWN, up:BODY_UP, side:BODY_SIDE };
+const HARVEY_GRIDS = { down:HARVEY_DOWN, up:HARVEY_UP, side:HARVEY_SIDE };
+
+// Zeichnet ein Text-Bild Pixel für Pixel auf den Canvas
+function drawGrid(grid, pal, dx, dy, flip){
+  for(let r=0; r<grid.length; r++){
+    const row = grid[r];
+    for(let c=0; c<row.length; c++){
+      const col = pal[row[c]];
+      if(col){
+        ctx.fillStyle = col;
+        ctx.fillRect(dx + (flip ? row.length-1-c : c), dy + r, 1, 1);
+      }
+    }
+  }
+}
+
+/* --- Portraits (größere Gesichter für die Dialogbox) --- */
+const PORTRAIT_PLAYER = [
+  "....hhhhhhhhhhhh....",
+  "..hhhhhhhhhhhhhhhh..",
+  ".hhhhhhhhhhhhhhhhhh.",
+  ".hhhhhhhhhhhhhhhhhh.",
+  ".hhhhhhhhhhhhhhhhhh.",
+  ".hdssssssssssssssdh.",
+  ".hssssssssssssssssh.",
+  ".hsbbsssssssssbbssh.",
+  ".hsseessssssseesssh.",
+  ".hsssssssSSsssssssh.",
+  ".hssssssssssssssssh.",
+  "..ssssssmmmmssssss..",
+  "..ssssssssssssssss..",
+  "...ssssssssssssss...",
+  "......ssssssss......",
+  "....cccccccccccc....",
+  "..cccccccccccccccc..",
+  ".cccccccccccccccccc.",
+  ".cckkkkkkkkkkkkkkcc.",
+  ".cccccccccccccccccc."
+];
+const PORTRAIT_HARVEY = [
+  "....tttttttttttt....",
+  "..tttttttttttttttt..",
+  ".tttttttttttttttttt.",
+  ".tttttttttttttttttt.",
+  "TTTTTTTTTTTTTTTTTTTT",
+  "TTTTTTTTTTTTTTTTTTTT",
+  "..ssssssssssssssss..",
+  ".ssssssssssssssssss.",
+  ".sbbbssssssssbbbsss.",
+  ".ssseessssssseessss.",
+  ".ssssssssSSssssssss.",
+  ".ssffffffffffffffss.",
+  ".sffffffffffffffffs.",
+  "..ffffffffffffffff..",
+  "..fffffffmmfffffff..",
+  "..ffffffffffffffff..",
+  "...ffffffffffffff...",
+  "ccccffffffffffffcccc",
+  "ccccccffffffffcccccc",
+  "cccccccccccccccccccc"
+];
+const PORTRAIT_HARVEY_PAL = { t:'#77714a', T:'#5b5636', s:'#eec39a', S:'#d1a06f',
+  e:'#2e2430', b:'#8a8172', f:'#cfc6b8', m:'#5c5147', c:'#5c7d5a' };
+function portraitPlayerPal(){
+  const p = playerPal();
+  return { h:p.h, d:p.d, s:p.s, S:p.S, e:p.e, b:p.d, m:'#c96a58', c:p.c, k:p.k };
+}
+const PORTRAIT_FRIEND_PAL = { h:'#e8c860', d:'#c9a63f', s:'#f8d8b8', S:'#e2b48e',
+  e:'#2e2430', b:'#c9a63f', m:'#c96a58', c:'#f2ead8', k:'#ddd2ba' };
+
+/* --- Item-Icons (werden mit einfachen Rechtecken gemalt) --- */
+const ICONS = {
+  glasses(x,y){
+    ctx.fillStyle='#241d26';
+    ctx.fillRect(x+1,y+6,6,4); ctx.fillRect(x+9,y+6,6,4);   // Gläser
+    ctx.fillRect(x+7,y+6,2,2);                              // Steg
+    ctx.fillStyle='#6d4a2f';
+    ctx.fillRect(x,y+6,1,2); ctx.fillRect(x+15,y+6,1,2);    // Bügel
+    ctx.fillStyle='#5a5a70'; ctx.fillRect(x+2,y+7,2,1); ctx.fillRect(x+10,y+7,2,1); // Glanz
+  },
+  tape(x,y){
+    ctx.fillStyle='#8d8d95'; // Rolle
+    for(let dy=-6;dy<=6;dy++){ const hw=Math.floor(Math.sqrt(49-dy*dy)); ctx.fillRect(x+8-hw,y+8+dy,hw*2,1); }
+    ctx.fillStyle='#c9c9d1';
+    for(let dy=-2;dy<=2;dy++){ const hw=Math.floor(Math.sqrt(9-dy*dy)); ctx.fillRect(x+8-hw,y+8+dy,hw*2,1); }
+    ctx.fillStyle='#6d6d78'; ctx.fillRect(x+8,y+1,6,3); // abstehendes Ende
+  },
+  apple(x,y){
+    ctx.fillStyle='#c9402f';
+    for(let dy=-5;dy<=5;dy++){ const hw=Math.floor(Math.sqrt(36-dy*dy)); ctx.fillRect(x+8-hw,y+9+dy,hw*2,1); }
+    ctx.fillStyle='#e26a4a'; ctx.fillRect(x+5,y+6,3,3);      // Glanzpunkt
+    ctx.fillStyle='#6d4a2f'; ctx.fillRect(x+8,y+1,1,3);      // Stiel
+    ctx.fillStyle='#68a357'; ctx.fillRect(x+9,y+1,3,2);      // Blatt
+  },
+  muesli(x,y){
+    ctx.fillStyle='#c9a03f'; ctx.fillRect(x+1,y+5,14,7);     // Riegel
+    ctx.fillStyle='#a8842f'; ctx.fillRect(x+1,y+10,14,2);
+    ctx.fillStyle='#8a5a2b';                                  // Haferstückchen
+    ctx.fillRect(x+3,y+6,2,1); ctx.fillRect(x+7,y+8,2,1); ctx.fillRect(x+11,y+6,2,1);
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+13,y+4,3,9);     // Verpackungsende
+  },
+  ashtray(x,y){
+    ctx.fillStyle='#7d8896'; ctx.fillRect(x+2,y+6,12,7);     // Döschen
+    ctx.fillStyle='#9aa6b5'; ctx.fillRect(x+2,y+4,12,3);     // Deckel
+    ctx.fillStyle='#5c6674'; ctx.fillRect(x+2,y+12,12,1);
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+5,y+8,2,3); ctx.fillRect(x+9,y+8,2,3); // Stummel drin
+    ctx.fillStyle='#e8944a'; ctx.fillRect(x+5,y+8,2,1); ctx.fillRect(x+9,y+8,2,1);
+  },
+  bag(x,y){
+    ctx.fillStyle='#8a5a34'; ctx.fillRect(x+2,y+4,12,10);    // Korpus
+    ctx.fillStyle='#6d4426'; ctx.fillRect(x+2,y+4,12,4);     // Klappe
+    ctx.fillStyle='#c9a03f'; ctx.fillRect(x+7,y+7,2,2);      // Schnalle
+    ctx.fillStyle='#5a3a20'; ctx.fillRect(x+4,y+1,2,4); ctx.fillRect(x+10,y+1,2,4); // Träger
+    ctx.fillStyle='#a8744a'; ctx.fillRect(x+4,y+10,8,3);     // Vordertasche
+  }
+};
+
+/* ============ 5. WELT ============ */
+const MAPW = 44, MAPH = 34;                 // Kartengröße in Kacheln (16px)
+const objects = [];                          // Zelte, Bäume, Klos, Schilder ...
+const solids  = [];                          // unsichtbare Kollisions-Rechtecke
+const stubsOnGround = [];                    // weggeworfene Kippenstummel
+const particles = [];                        // Rauch, Funken ...
+let ground = null;                           // vorgerenderter Boden
+
+// Wo verläuft der Trampelpfad? (Kachel-Rechtecke: x, y, Breite, Höhe)
+const PATH_RECTS = [
+  [13, 8, 14, 2],   // vom Camp nach Osten
+  [25, 8,  2, 19],  // nach Süden
+  [26,13,  7,  3],  // Vorplatz der Dixi-Klos
+  [27,25,  9,  2],  // nach Osten zu Stellas Camp
+  [33,25,  8,  5],  // Lichtung Stellas Camp
+  [ 6, 6,  7,  5]   // Lichtung Spieler-Camp
+];
+function tileIsPath(tx,ty){
+  return PATH_RECTS.some(r => tx>=r[0] && tx<r[0]+r[2] && ty>=r[1] && ty<r[1]+r[3]);
+}
+
+// Malt die komplette Wiese samt Pfad EINMAL in einen unsichtbaren Canvas.
+function buildGround(){
+  ground = document.createElement('canvas');
+  ground.width = MAPW*TILE; ground.height = MAPH*TILE;
+  const g = ground.getContext('2d');
+  const rnd = mulberry32(1337);
+  for(let ty=0; ty<MAPH; ty++){
+    for(let tx=0; tx<MAPW; tx++){
+      const path = tileIsPath(tx,ty);
+      g.fillStyle = path ? '#dcc28e' : '#a3cf6b';
+      g.fillRect(tx*TILE, ty*TILE, TILE, TILE);
+      // Sprenkel für lebendige Textur
+      for(let i=0;i<5;i++){
+        const px = tx*TILE + Math.floor(rnd()*15);
+        const py = ty*TILE + Math.floor(rnd()*15);
+        if(path){ g.fillStyle = rnd()<0.5 ? '#cbb47e' : '#e6d3a2'; }
+        else    { g.fillStyle = rnd()<0.5 ? '#94c15c' : '#b2da7b'; }
+        g.fillRect(px,py,1,1);
+      }
+      if(!path){
+        const r = rnd();
+        if(r < 0.05){ // Grasbüschel
+          const px=tx*TILE+4+Math.floor(rnd()*8), py=ty*TILE+4+Math.floor(rnd()*8);
+          g.fillStyle='#7fb35f'; g.fillRect(px,py,1,3); g.fillRect(px+2,py+1,1,2);
+        } else if(r < 0.075){ // Blümchen
+          const px=tx*TILE+4+Math.floor(rnd()*8), py=ty*TILE+4+Math.floor(rnd()*8);
+          const cols=['#f2e6b8','#e8a0b8','#f2c46a','#d9e8f2'];
+          g.fillStyle=cols[Math.floor(rnd()*4)];
+          g.fillRect(px,py-1,1,1); g.fillRect(px,py+1,1,1);
+          g.fillRect(px-1,py,1,1); g.fillRect(px+1,py,1,1);
+          g.fillStyle='#c9a03f'; g.fillRect(px,py,1,1);
+        }
+      }
+    }
+  }
+}
+
+/* --- Objekte platzieren --- */
+const TENT_COLORS = {
+  koralle:{c1:'#e8836f', c1b:'#f0a08c', c2:'#b85843'},
+  lila:   {c1:'#9b7fc9', c1b:'#b49ad9', c2:'#77599e'},
+  tuerkis:{c1:'#5fb3a8', c1b:'#7fc9bf', c2:'#438a80'},
+  gelb:   {c1:'#e6c35c', c1b:'#f0d484', c2:'#bd9b3c'},
+  gruen:  {c1:'#7fb35f', c1b:'#9cc97e', c2:'#5f8f45'}
+};
+function addTent(tx,ty,colors,text,label){
+  const x=tx*TILE, y=ty*TILE, w=64, h=44;
+  objects.push({ type:'tent', x, y, w, h, col:colors, text, label,
+    base:y+h, solid:{x:x+4, y:y+16, w:w-8, h:h-16}, ax:x+w/2, ay:y+h });
+}
+function addTree(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'tree', x, base, solid:{x:x-4, y:base-8, w:8, h:8} });
+}
+function addBush(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'bush', x, base, solid:{x:x-5, y:base-6, w:10, h:6} });
+}
+function addToilet(tx,ty){
+  const x=tx*TILE, y=ty*TILE;
+  objects.push({ type:'toilet', x, y, base:y+26,
+    text:'Besetzt...? Nein, nur verklemmt. Da willst du gerade wirklich nicht rein.',
+    label:'Dixi-Klo', ax:x+8, ay:y+26, solid:{x:x, y:y+8, w:16, h:18} });
+}
+function addSign(tx,ty,text){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'sign', x, base, text, label:'Schild',
+    ax:x, ay:base, solid:{x:x-2, y:base-4, w:4, h:4} });
+}
+function addFire(tx,ty,small){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'fire', x, base, small:!!small, emitT:0,
+    solid:{x:x-6, y:base-6, w:12, h:6} });
+}
+function addHammock(tx,ty){
+  const x=tx*TILE, base=ty*TILE+18;
+  objects.push({ type:'hammock', x, base, solid:null });
+  // die beiden Pfosten sind fest
+  solids.push({x:x+2, y:base-6, w:4, h:6});
+  solids.push({x:x+58, y:base-6, w:4, h:6});
+}
+
+function buildWorld(){
+  buildGround();
+  // Waldrand rundherum
+  for(let x=1; x<43; x+=2){ addTree(x,1); addTree(x,32); }
+  for(let y=3; y<32; y+=2){ addTree(1,y); addTree(42,y); }
+  // Spieler-Camp (Nordwesten)
+  addTent(4,4,  TENT_COLORS.koralle, 'Zzzzz... Aus dem Zelt schnarcht es leise.', 'Zelt');
+  addTent(9,3,  TENT_COLORS.lila,    'Harveys Zelt. Es riecht nach Kaffee und Sonnencreme.', 'Zelt');
+  addTent(3,9,  TENT_COLORS.tuerkis, 'Zzzzz... Hier schläft noch jemand tief und fest.', 'Zelt');
+  addFire(8,8,false);
+  addHammock(11,7);
+  addSign(14,10,'Hauptweg nach Osten. Festivalgelände: noch gesperrt (Aufbau!)');
+  // Dixi-Klos am Weg
+  addToilet(27,13); addToilet(29,13); addToilet(31,13);
+  addSign(26,16,'Dixi-Klos. Bitte sauber halten!');
+  addSign(24,19,'Süden: weitere Camps');
+  // Stellas Camp (Südosten)
+  addTent(33,24, TENT_COLORS.gelb,  'Ein sonnengelbes Zelt. Es wirkt seltsam vertraut...', 'Zelt');
+  addTent(37,26, TENT_COLORS.gruen, 'Vor dem Zelt liegen Girlanden und Werkzeug verstreut.', 'Zelt');
+  addFire(35,29,true);
+  addSign(32,27,'Camp "Sonnenblume"');
+  // verstreute Bäume & Büsche (abseits der Wege)
+  [[18,5],[21,18],[16,22],[33,10],[38,7],[8,18],[12,26],[30,20],[36,19],[20,29],[6,22],[40,15]]
+    .forEach(p=>addTree(p[0],p[1]));
+  [[15,12],[19,10],[23,22],[35,21],[31,29],[10,14],[6,15],[17,27]]
+    .forEach(p=>addBush(p[0],p[1]));
+  // Kollisionen aus den Objekten einsammeln
+  for(const o of objects){ if(o.solid) solids.push(o.solid); }
+  // unsichtbare Wände am Kartenrand
+  solids.push({x:0,y:0,w:MAPW*TILE,h:28});
+  solids.push({x:0,y:MAPH*TILE-24,w:MAPW*TILE,h:24});
+  solids.push({x:0,y:0,w:28,h:MAPH*TILE});
+  solids.push({x:MAPW*TILE-28,y:0,w:28,h:MAPH*TILE});
+}
+
+/* --- Zeichenfunktionen der Objekte --- */
+function pixCircle(cx,cy,r,col){
+  ctx.fillStyle=col;
+  for(let dy=-r; dy<=r; dy++){
+    const hw=Math.floor(Math.sqrt(r*r-dy*dy));
+    ctx.fillRect(cx-hw, cy+dy, hw*2+1, 1);
+  }
+}
+function drawTent(o){
+  const cx=o.x+o.w/2;
+  ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(o.x+4,o.base-3,o.w-8,4);
+  for(let i=0;i<o.h;i++){
+    const half=Math.max(2, Math.round((i/o.h)*(o.w/2)));
+    ctx.fillStyle = (Math.floor(i/6)%2===0) ? o.col.c1 : o.col.c1b;  // Streifen
+    ctx.fillRect(cx-half, o.y+i, half*2, 1);
+    ctx.fillStyle=o.col.c2;
+    ctx.fillRect(cx-half, o.y+i, 1, 1); ctx.fillRect(cx+half-1, o.y+i, 1, 1);
+  }
+  // Eingang
+  const dh=16;
+  for(let j=0;j<dh;j++){
+    const hw=Math.max(1, Math.round((j/dh)*6));
+    ctx.fillStyle='#3b2f2f';
+    ctx.fillRect(cx-hw, o.y+o.h-dh+j, hw*2, 1);
+  }
+  ctx.fillStyle='#e8e0d0'; ctx.fillRect(cx-1, o.y, 2, 3);  // Zeltspitze
+}
+function drawTree(o){
+  ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(o.x-7,o.base-2,14,3);
+  ctx.fillStyle='#7a5230'; ctx.fillRect(o.x-2,o.base-9,4,9);
+  ctx.fillStyle='#5e3f24'; ctx.fillRect(o.x-2,o.base-9,1,9);
+  pixCircle(o.x,   o.base-16, 9, '#4d7c3e');
+  pixCircle(o.x-4, o.base-19, 6, '#63994b');
+  pixCircle(o.x+4, o.base-18, 6, '#63994b');
+  pixCircle(o.x,   o.base-22, 5, '#7fb35f');
+  ctx.fillStyle='#a4cd7f';
+  ctx.fillRect(o.x-3,o.base-24,2,1); ctx.fillRect(o.x+2,o.base-21,1,1);
+}
+function drawBush(o){
+  ctx.fillStyle='rgba(50,35,25,0.18)'; ctx.fillRect(o.x-6,o.base-2,12,2);
+  pixCircle(o.x, o.base-5, 6, '#63994b');
+  pixCircle(o.x-2, o.base-7, 4, '#7fb35f');
+  ctx.fillStyle='#a4cd7f'; ctx.fillRect(o.x+1,o.base-8,1,1);
+}
+function drawToilet(o){
+  ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(o.x,o.base-2,16,3);
+  ctx.fillStyle='#3f8f8a'; ctx.fillRect(o.x,o.y+4,16,22);      // Kabine
+  ctx.fillStyle='#2f6f6b'; ctx.fillRect(o.x,o.y+4,2,22); ctx.fillRect(o.x+14,o.y+4,2,22);
+  ctx.fillStyle='#e8e4da'; ctx.fillRect(o.x-1,o.y,18,5);       // Dach
+  ctx.fillStyle='#c9c4b8'; ctx.fillRect(o.x-1,o.y+4,18,1);
+  ctx.fillStyle='#2f6f6b'; ctx.fillRect(o.x+4,o.y+8,8,16);     // Tür
+  ctx.fillStyle='#e8e4da'; ctx.fillRect(o.x+10,o.y+15,2,2);    // Griff
+  ctx.fillStyle='#d9f2ef'; ctx.fillRect(o.x+6,o.y+10,4,2);     // Lüftung
+}
+function drawSign(o){
+  ctx.fillStyle='#7a5230'; ctx.fillRect(o.x-1,o.base-10,3,10);
+  ctx.fillStyle='#b98d5a'; ctx.fillRect(o.x-9,o.base-16,19,9);
+  ctx.fillStyle='#8a6538'; ctx.fillRect(o.x-9,o.base-16,19,1); ctx.fillRect(o.x-9,o.base-8,19,1);
+  ctx.fillStyle='#6d4a2f';
+  ctx.fillRect(o.x-6,o.base-13,13,1); ctx.fillRect(o.x-6,o.base-11,9,1);
+}
+function drawFire(o){
+  ctx.fillStyle='#8d8d95';   // Steinkreis
+  ctx.fillRect(o.x-8,o.base-3,3,2); ctx.fillRect(o.x+5,o.base-3,3,2);
+  ctx.fillRect(o.x-6,o.base-1,3,2); ctx.fillRect(o.x+3,o.base-1,3,2);
+  ctx.fillRect(o.x-2,o.base,4,2);
+  ctx.fillStyle='#6d4a2f'; ctx.fillRect(o.x-5,o.base-4,10,2);   // Scheite
+  ctx.fillRect(o.x-2,o.base-6,4,3);
+  const f = Math.sin(state.time*9 + o.x)*1.5;                    // Flackern
+  const h = (o.small?7:10) + f;
+  for(let i=0;i<h;i++){
+    const hw=Math.max(1, Math.round((1-i/h)*4));
+    ctx.fillStyle = i<h*0.45 ? '#e8944a' : (i<h*0.75 ? '#f2b84a' : '#f8e08a');
+    ctx.fillRect(o.x-hw, o.base-6-i, hw*2, 1);
+  }
+}
+function drawHammock(o){
+  ctx.fillStyle='#6d4a2f';
+  ctx.fillRect(o.x+2, o.base-20, 3, 20); ctx.fillRect(o.x+59, o.base-20, 3, 20);
+  ctx.fillStyle='#5a3a20'; ctx.fillRect(o.x+1,o.base-21,5,2); ctx.fillRect(o.x+58,o.base-21,5,2);
+  for(let i=0;i<=24;i++){                                        // durchhängendes Netz
+    const t=i/24;
+    const px=Math.round(lerp(o.x+4, o.x+60, t));
+    const py=Math.round(o.base-16 + Math.sin(Math.PI*t)*7);
+    ctx.fillStyle='#d9c9a0'; ctx.fillRect(px,py,2,2);
+    if(t>0.25 && t<0.75){ ctx.fillStyle='#c96f9b'; ctx.fillRect(px,py-1,2,2); } // Decke
+  }
+}
+function drawStub(s){
+  ctx.fillStyle='#e8e0d0'; ctx.fillRect(Math.round(s.x),Math.round(s.y),3,1);
+  ctx.fillStyle='#e8944a'; ctx.fillRect(Math.round(s.x)+3,Math.round(s.y),1,1);
+}
+// Wimpelkette (rein dekorativ, wird ÜBER allem gezeichnet)
+function drawBunting(x1,y1,x2,y2){
+  const cols=['#e05a4e','#e8c35c','#5f9bd9','#7bbf6a','#c97bb0'];
+  const n=12;
+  for(let i=0;i<=n;i++){
+    const t=i/n;
+    const px=Math.round(lerp(x1,x2,t));
+    const py=Math.round(lerp(y1,y2,t) + Math.sin(Math.PI*t)*7);
+    ctx.fillStyle='#8a6538'; ctx.fillRect(px,py,2,1);           // Schnur
+    if(i<n && i%1===0){
+      ctx.fillStyle=cols[i%5];
+      ctx.fillRect(px,py+1,4,2); ctx.fillRect(px+1,py+3,2,2);   // Wimpel
+    }
+  }
+}
+function drawObject(o){
+  switch(o.type){
+    case 'tent':    drawTent(o); break;
+    case 'tree':    drawTree(o); break;
+    case 'bush':    drawBush(o); break;
+    case 'toilet':  drawToilet(o); break;
+    case 'sign':    drawSign(o); break;
+    case 'fire':    drawFire(o); break;
+    case 'hammock': drawHammock(o); break;
+  }
+}
+
+/* ============ 6. FIGUREN & BEWEGUNG ============ */
+const player = { x:204, y:150, facing:'down', moving:false, animT:0, frame:0,
+                 pal:null, gridSet:PLAYER_GRIDS };
+const npcs = [];
+function addNPC(id,name,x,y,pal,gridSet,portrait,pPal,talk){
+  const n = { id, name, x, y, facing:'down', moving:false, animT:0, frame:0,
+              pal, gridSet, portrait, pPal, talk };
+  npcs.push(n);
+  return n;
+}
+
+function entBox(e){ return { x:e.x-5, y:e.y-7, w:10, h:7 }; }
+function rectsOverlap(a,b){
+  return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
+}
+// Bewegt eine Figur Achse für Achse und stoppt an Hindernissen
+function moveEntity(e, dx, dy, ignoreNpcs){
+  const blockers = solids.slice();
+  if(!ignoreNpcs){
+    for(const n of npcs){ if(n!==e) blockers.push(entBox(n)); }
+    if(e!==player) blockers.push(entBox(player));
+  }
+  e.x += dx;
+  let box = entBox(e);
+  for(const s of blockers){
+    if(rectsOverlap(box,s)){
+      if(dx>0) e.x = s.x - 5; else if(dx<0) e.x = s.x + s.w + 5;
+      box = entBox(e);
+    }
+  }
+  e.y += dy;
+  box = entBox(e);
+  for(const s of blockers){
+    if(rectsOverlap(box,s)){
+      if(dy>0) e.y = s.y - 0.01; else if(dy<0) e.y = s.y + s.h + 7;
+      box = entBox(e);
+    }
+  }
+}
+
+function playerUpdate(dt){
+  let dx=0, dy=0;
+  if(keys['w']||keys['arrowup'])    dy-=1;
+  if(keys['s']||keys['arrowdown'])  dy+=1;
+  if(keys['a']||keys['arrowleft'])  dx-=1;
+  if(keys['d']||keys['arrowright']) dx+=1;
+  const moving = (dx!==0 || dy!==0);
+  player.moving = moving;
+  if(moving){
+    const len=Math.hypot(dx,dy); dx/=len; dy/=len;
+    if(dx<0) player.facing='left'; else if(dx>0) player.facing='right';
+    else if(dy<0) player.facing='up'; else player.facing='down';
+    let spd = CFG.PLAYER_SPEED * (state.energy<20 ? 0.6 : 1);   // erschöpft = langsam
+    moveEntity(player, dx*spd*dt, dy*spd*dt, false);
+    player.animT += dt;
+    player.frame = Math.floor(player.animT*7)%4;
+  } else {
+    player.frame = 0; player.animT = 0;
+  }
+}
+function npcUpdate(dt){
+  for(const n of npcs){
+    if(n.id==='harvey' && !state.cutscene){
+      n.wanderT = (n.wanderT||0) - dt;               // Harvey schaut sich gelegentlich um
+      if(n.wanderT<=0){ n.wanderT = 4+Math.random()*4; n.facing = pick(['down','left','right']); }
+    }
+  }
+}
+
+// Zeichnet eine Figur (Spieler oder NPC) inkl. Schatten & Lauf-Animation
+function drawEntity(e){
+  let baseGrid, flip=false;
+  if(e.facing==='up') baseGrid=e.gridSet.up;
+  else if(e.facing==='down') baseGrid=e.gridSet.down;
+  else { baseGrid=e.gridSet.side; flip=(e.facing==='right'); }
+  const legs = e.moving ? (e.frame===1?LEGS_A : e.frame===3?LEGS_B : LEGS_IDLE) : LEGS_IDLE;
+  const grid = baseGrid.slice(0,13).concat(legs);
+  const bob = (e.moving && (e.frame===1||e.frame===3)) ? -1 : 0;
+  const sx = Math.round(e.x-6), sy = Math.round(e.y-16+bob);
+  ctx.fillStyle='rgba(50,35,25,0.25)';
+  ctx.fillRect(sx+2, Math.round(e.y)-1, 8, 2);
+  drawGrid(grid, e.pal, sx, sy, flip);
+  return {sx, sy, flip};
+}
+function drawPlayerEnt(){
+  const pos = drawEntity(player);
+  // Sonnenbrille sitzt auf der Nase
+  if(state.wearingGlasses && player.facing!=='up'){
+    const yE = pos.sy+5;
+    ctx.fillStyle='#241d26';
+    if(player.facing==='down'){
+      ctx.fillRect(pos.sx+3,yE,2,2); ctx.fillRect(pos.sx+7,yE,2,2); ctx.fillRect(pos.sx+5,yE,2,1);
+    } else if(player.facing==='left'){
+      ctx.fillRect(pos.sx+2,yE,3,2);
+    } else {
+      ctx.fillRect(pos.sx+7,yE,3,2);
+    }
+  }
+  // Zigarette beim Rauchen
+  if(state.smoke.phase==='smoking' && player.facing!=='up'){
+    const cx = player.facing==='left' ? pos.sx+1 : pos.sx+8;
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(cx, pos.sy+7, 3, 1);
+    ctx.fillStyle='#e8944a'; ctx.fillRect(player.facing==='left'?cx:cx+2, pos.sy+7, 1, 1);
+  }
+}
+
+/* ============ 7. INVENTAR, STATUS, JOURNAL, TOASTS ============ */
+const ITEMS = {
+  glasses: { name:'Sonnenbrille', desc:'Schützt müde Festival-Augen. Geht gerne mal kaputt.', actions:['wear'] },
+  tape:    { name:'Panzertape',   desc:'Repariert angeblich alles. Angeblich.', actions:['use'] },
+  apple:   { name:'Apfel',        desc:'Knackig. +'+CFG.APPLE_ENERGY+' Energie.', actions:['eat'], energy:CFG.APPLE_ENERGY },
+  muesli:  { name:'Müsliriegel',  desc:'Haferpower. +'+CFG.MUESLI_ENERGY+' Energie.', actions:['eat'], energy:CFG.MUESLI_ENERGY }
+};
+function getItem(id){ return state.inv.find(i=>i.id===id); }
+function giveItem(id,n){ const it=getItem(id); if(it) it.n+=n; else state.inv.push({id,n}); }
+function removeItem(it){ const i=state.inv.indexOf(it); if(i>=0) state.inv.splice(i,1); }
+
+function addSympathy(id,d){
+  const s=state.sympathy.find(s=>s.id===id);
+  if(s) s.val=clamp(s.val+d,-10,10);
+}
+function sympathyAll(d){ state.sympathy.forEach(s=>s.val=clamp(s.val+d,-10,10)); }
+function setFriend(name){
+  state.friendName = name;
+  const s = state.sympathy.find(s=>s.id==='friend'); if(s) s.name=name;
+  const n = npcs.find(n=>n.id==='friend'); if(n) n.name=name;
+}
+
+const toasts = [];
+function toast(text){ toasts.push({text, t:4}); }
+function updateToasts(dt){
+  for(const t of toasts) t.t-=dt;
+  for(let i=toasts.length-1;i>=0;i--) if(toasts[i].t<=0) toasts.splice(i,1);
+}
+
+function statusUpdate(dt){
+  state.energy = clamp(state.energy - (player.moving?CFG.ENERGY_DRAIN_MOVE:CFG.ENERGY_DRAIN_IDLE)*dt, 0, 100);
+  if(state.energy<20 && !state.flags.lowEnergyWarned){
+    state.flags.lowEnergyWarned = true;
+    toast('Du bist ziemlich erschöpft... iss etwas! (Menü: Tasche)');
+  }
+  if(state.energy>=25) state.flags.lowEnergyWarned = false;
+  const regen = state.smoke.phase==='smoking' ? 2 : (player.moving ? 0 : 0.4);
+  state.social = clamp(state.social + regen*dt, 0, 100);
+}
+
+// Bricht die Brille evtl. nach einem Gespräch – Festival-Alltag halt.
+function maybeBreakGlasses(){
+  if(!state.flags.introDone || !state.wearingGlasses) return;
+  if(Math.random() < CFG.GLASSES_BREAK_CHANCE){
+    const it = getItem('glasses');
+    if(it){ it.n--; if(it.n<=0) removeItem(it); }
+    state.wearingGlasses = false;
+    const left = getItem('glasses');
+    state.whiteTarget = left ? 0.32 : 0.5;
+    toast('Knack! Deine Sonnenbrille ist kaputtgegangen.' + (left ? ' Setz im Menü eine neue auf.' : ' Das war die letzte...'));
+  }
+}
+function doItemAction(item, act){
+  const def = ITEMS[item.id];
+  if(act==='eat'){
+    state.energy = clamp(state.energy + def.energy, 0, 100);
+    item.n--;
+    toast(def.name+' gegessen: +'+def.energy+' Energie');
+    if(item.n<=0){ removeItem(item); state.menu.sel = -1; }
+  } else if(act==='wear'){
+    if(state.wearingGlasses){ toast('Du trägst schon eine Sonnenbrille.'); }
+    else if(item.n>0){ state.wearingGlasses=true; state.whiteTarget=0; toast('Sonnenbrille aufgesetzt. Ahh, besser.'); }
+  } else if(act==='use'){
+    toast('Panzertape: Dafür gibt es (noch) keine Verwendung...');
+  }
+}
+
+/* ============ 8. RAUCH-MECHANIK ============
+   Wer zu lange rumsteht, dreht sich automatisch eine. */
+function smokeUpdate(dt){
+  const sm = state.smoke;
+  if(player.moving){
+    if(sm.phase==='smoking') finishCig();
+    sm.phase='none'; sm.t=0; state.idleSince=0;
+    return;
+  }
+  state.idleSince += dt;
+  if(sm.phase==='none' && state.idleSince>=CFG.IDLE_SMOKE_SEC){
+    sm.phase='rolling'; sm.t=0;
+  } else if(sm.phase==='rolling'){
+    sm.t += dt;
+    if(sm.t>=CFG.ROLL_SEC){ sm.phase='smoking'; sm.t=0; }
+  } else if(sm.phase==='smoking'){
+    sm.t += dt;
+    if(sm.t>0.6){                       // regelmäßig ein Rauchwölkchen
+      sm.t=0;
+      particles.push({x:player.x+ (player.facing==='left'?-5:5), y:player.y-11,
+        vx:(Math.random()-0.5)*3, vy:-8-Math.random()*4, life:1.6, col:'rgba(200,200,210,0.5)', size:2});
+    }
+  }
+}
+function finishCig(){
+  if(state.ashtray < CFG.ASH_CAPACITY){
+    state.ashtray++;
+    toast('Stummel im Taschenascher verstaut ('+state.ashtray+'/'+CFG.ASH_CAPACITY+').');
+  } else {
+    stubsOnGround.push({ x:player.x+(Math.random()*8-4), y:player.y+1 });
+    sympathyAll(-CFG.LITTER_PENALTY);
+    toast('Taschenascher voll! Stummel auf den Boden geworfen: -'+deNum(CFG.LITTER_PENALTY)+' Sympathie bei allen.');
+  }
+}
+function particlesUpdate(dt){
+  for(const p of particles){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt; }
+  for(let i=particles.length-1;i>=0;i--) if(particles[i].life<=0) particles.splice(i,1);
+}
+function fireEmit(dt){
+  for(const o of objects){
+    if(o.type!=='fire') continue;
+    o.emitT -= dt;
+    if(o.emitT<=0){
+      o.emitT = 0.5+Math.random()*0.4;
+      particles.push({x:o.x+(Math.random()*4-2), y:o.base-12,
+        vx:(Math.random()-0.5)*2, vy:-10, life:1.4, col:'rgba(120,110,105,0.4)', size:2});
+    }
+  }
+}
+
+/* ============ 9. DIALOGSYSTEM ============
+   Ein Dialog ist eine Kette von "Knoten". Jeder Knoten hat einen Sprecher,
+   einen Text und weiß, wo es danach weitergeht (next) oder bietet
+   Antwortmöglichkeiten (choices) an. */
+const DIALOGS = {};
+
+function nodeText(node){ return typeof node.text==='function' ? node.text() : node.text; }
+function nodeChoices(node){
+  if(!node.choices) return null;
+  return typeof node.choices==='function' ? node.choices() : node.choices;
+}
+function resolveNode(ref){ return typeof ref==='string' ? DIALOGS[ref] : ref; }
+
+// Baut aus einer einfachen Liste von Zeilen eine Dialog-Kette
+function lin(arr){
+  let next=null;
+  for(let i=arr.length-1;i>=0;i--){
+    const n=Object.assign({},arr[i]); n.next=next; next=n;
+  }
+  return next;
+}
+
+function startDialog(ref, opts){
+  state.dialog = { node:null, chars:0, choiceIdx:0, choiceCount:0,
+                   inputActive:false, breakable: !!(opts&&opts.breakable) };
+  interactQueued = false;
+  state.idleSince = 0;
+  setNode(resolveNode(ref));
+}
+function setNode(node){
+  const d=state.dialog;
+  d.node=node; d.chars=0; d.choiceIdx=0; d.choiceCount=0; d.inputActive=false;
+  if(node.onEnter){
+    const redirect = node.onEnter();
+    if(redirect){ setNode(resolveNode(redirect)); return; }
+  }
+  if(node.input){ d.inputActive=true; showFriendInput(); }
+}
+function goNext(ref){
+  if(ref==null) endDialog();
+  else setNode(resolveNode(ref));
+}
+function advanceDialog(){
+  const d=state.dialog; if(!d) return;
+  if(d.inputActive) return;                        // erst Namen eintippen
+  const full=nodeText(d.node);
+  if(d.chars < full.length){ d.chars = full.length; return; }  // Text sofort komplett zeigen
+  const ch = nodeChoices(d.node);
+  if(ch && ch.length){
+    const c = ch[clamp(d.choiceIdx,0,ch.length-1)];
+    if(c.fx) c.fx();
+    state.social = clamp(state.social-2, 0, 100);
+    goNext(c.next);
+    return;
+  }
+  state.social = clamp(state.social-1.5, 0, 100);
+  goNext(d.node.next);
+}
+function endDialog(){
+  const br = state.dialog && state.dialog.breakable;
+  state.dialog = null;
+  hideFriendInput();
+  if(br) maybeBreakGlasses();
+}
+
+/* --- Das Intro-Gespräch mit Harvey (exakter Wortlaut) --- */
+DIALOGS.intro1 = { who:'harvey', text:'Hey, dein Gesicht kenne ich doch.', next:'intro2' };
+DIALOGS.intro2 = { who:'player', text:'Es ist sooo hell... Äh.. Hi?', next:'intro3' };
+DIALOGS.intro3 = { who:'harvey', text:'Herrje, wie konnte ich das vergessen! Du Arme(r), ohne Sonnenbrille kann so ein Festival wie dieses wirklich eine Tortur sein. Hier, nimm das.', next:'introItem' };
+DIALOGS.introItem = { who:'sys', name:'', text:'Du hast SONNENBRILLE x10 erhalten!',
+  onEnter(){ giveItem('glasses',10); state.wearingGlasses=true; state.whiteTarget=0; },
+  next:'intro4' };
+DIALOGS.intro4 = { who:'harvey', text:'Besser?', choices:[
+  { t:'Ja. Besser.', next:'intro5' },
+  { t:"Man, ich hab' mir echt Sorgen um dich gemacht...", next:'intro5', fx(){ addSympathy('harvey',1); } }
+]};
+DIALOGS.intro5 = { who:'harvey', text:'Ho ho, na wie auch immer. Die anderen aus meinem Camp schlafen wohl noch. Du siehst auch noch etwas mitgenommen aus. Oder möchtest du noch etwas wissen?',
+  choices: hubChoices };
+DIALOGS.qhub = { who:'harvey', text:'Sonst noch etwas?',
+  onEnter(){ if(state.flags.askedWho && state.flags.askedGlasses) return 'stellaLead'; },
+  choices: hubChoices };
+function hubChoices(){
+  const c=[];
+  if(!state.flags.askedWho) c.push({ t:'Wer bist du? Wo bin ich hier?', next:'qWho' });
+  if(!state.flags.askedGlasses) c.push({ t:'10 Sonnenbrillen??? Ihr habt mich aufgegabelt?', next:'qGlasses' });
+  return c;
+}
+DIALOGS.qWho = { who:'harvey',
+  text:'Ich bin Harvey! Und du bist hier auf dem Campingplatz des Festivals. Heute ist Donnerstag, kurz nach 14 Uhr. Der Aufbau läuft gerade erst an.',
+  onEnter(){ state.flags.askedWho=true; }, next:'qhub' };
+DIALOGS.qGlasses = { who:'harvey',
+  text:"Ho ho... 'aufgegabelt' trifft es ganz gut. Gestern Abend haben wir dich völlig durch den Wind am Wegesrand gefunden und mit ins Camp genommen. Du hast die ganze Zeit einen Namen vor dich hin gemurmelt... 'Stella'? So ähnlich jedenfalls.",
+  onEnter(){ state.flags.askedGlasses=true; }, next:'qhub' };
+DIALOGS.stellaLead = { who:'harvey', text:"Ach ja, dieser Name... 'Stella'. Sagt dir das etwas?", choices:[
+  { t:'Stella!!!', next:'stellaYes' },
+  { t:'Nein, ihr Name ist...', next:'friendInputNode' }
+]};
+DIALOGS.stellaYes = { who:'player', text:'Stella!!!', onEnter(){ setFriend('Stella'); }, next:'direction' };
+DIALOGS.friendInputNode = { who:'sys', name:'', text:'Wie heißt deine beste Freundin?', input:true };
+DIALOGS.direction = { who:'harvey',
+  text(){ return 'Wenn ich mich richtig erinnere, dann ist '+state.friendName+'s Camp südöstlich von hier, einmal an den Toiletten vorbei.'; },
+  next:'memNote' };
+DIALOGS.memNote = { who:'sys', name:'',
+  text(){ return 'Erinnerung freigeschaltet: '+state.friendName; },
+  onEnter(){ state.journal.memories.push('Erinnerung freigeschaltet: '+state.friendName); },
+  next:'missionNote' };
+DIALOGS.missionNote = { who:'sys', name:'',
+  text(){ return 'Neue Mission: Finde '+state.friendName; },
+  onEnter(){ state.journal.missions.push({key:'find', done:false}); state.flags.introDone=true; },
+  next:null };
+
+/* --- Gespräche nach dem Intro --- */
+function harveyTalk(){
+  const pool = [
+    'Der Kaffee hier schmeckt wie Zeltboden, aber er wirkt.',
+    'Wenn du mich suchst: Ich bin meistens hier am Feuer.',
+    'Trink genug Wasser! Sag ich jedem, hört keiner.',
+    state.friendName ? (state.friendName+'s Camp liegt südöstlich, einfach an den Dixi-Klos vorbei.') : 'Ruh dich ruhig noch etwas aus.'
+  ];
+  startDialog(lin([{who:'harvey', text:pick(pool)}]), {breakable:true});
+}
+function friendTalk(){
+  const m = state.journal.missions.find(m=>m.key==='find');
+  if(m && !m.done){
+    startDialog(lin([
+      { who:'friend', text:'Da bist du ja endlich! Ich hab dich gestern ÜBERALL gesucht...' },
+      { who:'friend', text:'Geht es dir gut? Du sahst übel aus. Wir müssen reden. Aber erstmal: schön, dass du da bist.' },
+      { who:'sys', name:'', text(){ return 'Mission abgeschlossen: Finde '+state.friendName+'!'; },
+        onEnter(){ m.done=true; addSympathy('friend',3); } },
+      { who:'sys', name:'', text:'ENDE DES PROTOTYPS. Hier geht Akt 1 später weiter. Du kannst die Karte frei erkunden.' }
+    ]), {breakable:true});
+  } else {
+    startDialog(lin([{who:'friend', text:'Wir quatschen später in Ruhe, okay? Ich muss noch unser Camp fertig aufbauen.'}]), {breakable:true});
+  }
+}
+
+/* ============ 10. INTERAKTION ============ */
+let currentCandidate = null;
+function facingVec(){
+  switch(player.facing){
+    case 'up': return [0,-1];
+    case 'down': return [0,1];
+    case 'left': return [-1,0];
+    default: return [1,0];
+  }
+}
+function findCandidate(){
+  const [fx,fy] = facingVec();
+  const px = player.x + fx*12, py = player.y - 4 + fy*12;
+  let best=null, bestD=26;
+  for(const n of npcs){
+    const d=Math.hypot(n.x-px, n.y-6-py);
+    if(d<bestD){ bestD=d; best={x:n.x, y:n.y-18, act:()=>n.talk(n)}; }
+  }
+  for(const o of objects){
+    if(!o.text) continue;
+    const d=Math.hypot(o.ax-px, o.ay-4-py);
+    if(d<bestD){ bestD=d; best={x:o.ax, y:(o.type==='tent'? o.y+14 : o.ay-22), act:()=>objTalk(o)}; }
+  }
+  currentCandidate = best;
+}
+function objTalk(o){
+  startDialog(lin([{who:'sys', name:o.label||'', text:o.text}]), {breakable:true});
+}
+function tryInteract(){
+  if(currentCandidate) currentCandidate.act();
+}
+
+/* ============ 11. UI (HUD, Menü, Dialogbox, Erstellung) ============ */
+function panel(x,y,w,h){
+  ctx.fillStyle='#5a4632'; ctx.fillRect(x-2,y-2,w+4,h+4);
+  ctx.fillStyle='#fdf3dc'; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle='#e3d2ac'; ctx.fillRect(x,y,w,2); ctx.fillRect(x,y,2,h);
+}
+function drawWrapped(text,x,y,maxW,lineH){
+  const words=String(text).split(' ');
+  let line='', ly=y;
+  for(const w of words){
+    const t=line ? line+' '+w : w;
+    if(ctx.measureText(t).width>maxW && line){
+      ctx.fillText(line,x,ly); ly+=lineH; line=w;
+    } else line=t;
+  }
+  if(line) ctx.fillText(line,x,ly);
+}
+function nameTag(text,x,y){
+  if(!text) return;
+  ctx.font='bold 8px monospace'; ctx.textBaseline='top';
+  const w=ctx.measureText(text).width+10;
+  ctx.fillStyle='#5a4632'; ctx.fillRect(x,y,w,11);
+  ctx.fillStyle='#fdf3dc'; ctx.fillText(text,x+5,y+2);
+}
+function button(x,y,w,h,label,cb){
+  ctx.fillStyle='#5a4632'; ctx.fillRect(x-1,y-1,w+2,h+2);
+  ctx.fillStyle='#e8d9b5'; ctx.fillRect(x,y,w,h);
+  ctx.font='bold 9px monospace'; ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
+  ctx.fillText(label, x+(w-ctx.measureText(label).width)/2, y+(h-9)/2+1);
+  region(x,y,w,h,cb);
+}
+function blinkArrow(x,y){
+  if(Math.floor(state.time*2)%2) return;
+  ctx.fillStyle='#c9602f';
+  ctx.fillRect(x,y,7,1); ctx.fillRect(x+1,y+1,5,1);
+  ctx.fillRect(x+2,y+2,3,1); ctx.fillRect(x+3,y+3,1,1);
+}
+function drawStar(x,y){
+  ctx.fillStyle='#e8b84a';
+  ctx.fillRect(x+2,y,1,5); ctx.fillRect(x,y+2,5,1);
+  ctx.fillStyle='#f8e08a'; ctx.fillRect(x+2,y+2,1,1);
+}
+function portraitFor(who){
+  if(who==='harvey') return {grid:PORTRAIT_HARVEY, pal:PORTRAIT_HARVEY_PAL};
+  if(who==='player') return {grid:PORTRAIT_PLAYER, pal:portraitPlayerPal()};
+  if(who==='friend') return {grid:PORTRAIT_PLAYER, pal:PORTRAIT_FRIEND_PAL};
+  return null;
+}
+function speakerName(node){
+  if(node.who==='harvey') return 'Harvey';
+  if(node.who==='player') return state.playerName;
+  if(node.who==='friend') return state.friendName||'???';
+  return node.name||'';
+}
+
+function drawHUD(){
+  if(state.cutscene) return;
+  hudBar(8,10,64,6,state.energy/100,'#e8944a','ENERGIE');
+  hudBar(8,24,64,6,state.social/100,'#5f9bd9','SOZIAL');
+  const bx=GAME_W-26, by=6;
+  ctx.fillStyle='#5a4632'; ctx.fillRect(bx-3,by-3,24,24);
+  ctx.fillStyle='#fdf3dc'; ctx.fillRect(bx-1,by-1,20,20);
+  ICONS.bag(bx+1,by+1);
+  region(bx-3,by-3,24,24,()=>{
+    if(!state.dialog && !state.cutscene) state.menu = state.menu ? null : {tab:'bag', sel:-1};
+  });
+  ctx.font='7px monospace'; ctx.fillStyle='rgba(30,25,40,0.55)';
+  ctx.fillRect(bx-2,by+22,22,9);
+  ctx.fillStyle='#fdf3dc'; ctx.textBaseline='top'; ctx.fillText('Menü',bx+1,by+23);
+}
+function hudBar(x,y,w,h,p,col,label){
+  ctx.fillStyle='rgba(30,25,40,0.55)'; ctx.fillRect(x-2,y-2,w+4,h+4);
+  ctx.fillStyle='#3b2f2f'; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle=col; ctx.fillRect(x,y,Math.round(w*clamp(p,0,1)),h);
+  ctx.font='7px monospace'; ctx.textBaseline='top';
+  const lw=ctx.measureText(label).width;
+  ctx.fillStyle='rgba(30,25,40,0.55)'; ctx.fillRect(x+w+4,y-2,lw+4,10);
+  ctx.fillStyle='#fdf3dc'; ctx.fillText(label,x+w+6,y-1);
+}
+
+function drawDialog(){
+  const d=state.dialog, node=d.node;
+  if(d.inputActive){
+    ctx.fillStyle='rgba(30,25,40,0.55)'; ctx.fillRect(0,0,GAME_W,GAME_H);
+    panel(110,110,260,80);
+    ctx.font='bold 10px monospace'; ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
+    const q=nodeText(node);
+    ctx.fillText(q, 240-ctx.measureText(q).width/2, 122);
+    ctx.font='8px monospace'; ctx.fillStyle='#7a6a50';
+    const hint='(Enter bestätigt)';
+    ctx.fillText(hint, 240-ctx.measureText(hint).width/2, 174);
+    return;
+  }
+  const full=nodeText(node);
+  if(node.who==='sys'){
+    ctx.font='bold 10px monospace';
+    const tw=Math.min(360, ctx.measureText(full).width);
+    const bw=Math.max(200, tw+40), bh=60;
+    const bx=(GAME_W-bw)/2, by=GAME_H-92;
+    panel(bx,by,bw,bh);
+    drawStar(bx+8,by+8); drawStar(bx+bw-14,by+8);
+    ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
+    drawWrapped(full.slice(0,Math.floor(d.chars)), bx+18, by+14, bw-36, 12);
+    if(node.name) nameTag(node.name,bx+6,by-9);
+    if(d.chars>=full.length) blinkArrow(bx+bw-14,by+bh-9);
+    d.choiceCount=0;
+    return;
+  }
+  const bx=8, by=GAME_H-88, bw=GAME_W-16, bh=80;
+  panel(bx,by,bw,bh);
+  let tx=bx+12;
+  const p=portraitFor(node.who);
+  if(p){
+    ctx.fillStyle='#5a4632'; ctx.fillRect(bx+8,by+8,64,64);
+    ctx.fillStyle='#efe3c2'; ctx.fillRect(bx+10,by+10,60,60);
+    ctx.save(); ctx.translate(bx+10,by+10); ctx.scale(3,3);
+    drawGrid(p.grid,p.pal,0,0,false);
+    ctx.restore();
+    tx=bx+82;
+  }
+  nameTag(speakerName(node), bx+6, by-9);
+  ctx.font='10px monospace'; ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
+  drawWrapped(full.slice(0,Math.floor(d.chars)), tx, by+14, bx+bw-12-tx, 13);
+  const ch=nodeChoices(node);
+  if(d.chars>=full.length && ch && ch.length){
+    d.choiceCount=ch.length;
+    ctx.font='9px monospace';
+    let mw=0; for(const c of ch) mw=Math.max(mw,ctx.measureText(c.t).width);
+    const cw=mw+28, chH=ch.length*14+10;
+    const cx=GAME_W-10-cw, cy=by-chH-6;
+    panel(cx,cy,cw,chH);
+    for(let i=0;i<ch.length;i++){
+      const ly=cy+6+i*14;
+      if(i===d.choiceIdx){ ctx.fillStyle='#c9602f'; ctx.fillText('>',cx+7,ly); }
+      ctx.fillStyle = i===d.choiceIdx ? '#3b2f2f' : '#8a7a5e';
+      ctx.fillText(ch[i].t, cx+17, ly);
+      region(cx,ly-2,cw,14, ((idx)=>()=>{ d.choiceIdx=idx; advanceDialog(); })(i));
+    }
+  } else {
+    d.choiceCount=0;
+    if(d.chars>=full.length) blinkArrow(bx+bw-14,by+bh-9);
+  }
+}
+
+function drawMenu(){
+  ctx.fillStyle='rgba(25,20,35,0.72)'; ctx.fillRect(0,0,GAME_W,GAME_H);
+  const px=16,py=16,pw=448,ph=288;
+  panel(px,py,pw,ph);
+  const tabs=[['bag','Tasche'],['status','Status'],['journal','Journal']];
+  ctx.textBaseline='top';
+  for(let i=0;i<3;i++){
+    const tx=px+12+i*96, ty=py+8, tw=88, th=18;
+    const active = state.menu.tab===tabs[i][0];
+    ctx.fillStyle = active ? '#e8d9b5' : '#cbb98f';
+    ctx.fillRect(tx,ty,tw,th);
+    ctx.fillStyle='#5a4632'; ctx.fillRect(tx,ty+th-2,tw,2);
+    ctx.font='bold 9px monospace'; ctx.fillStyle='#3b2f2f';
+    ctx.fillText(tabs[i][1], tx+(tw-ctx.measureText(tabs[i][1]).width)/2, ty+5);
+    region(tx,ty,tw,th, ((tb)=>()=>{ state.menu.tab=tb; state.menu.sel=-1; })(tabs[i][0]));
+  }
+  const cx=px+pw-28, cy=py+8;
+  ctx.fillStyle='#c9602f'; ctx.fillRect(cx,cy,18,18);
+  ctx.font='bold 9px monospace'; ctx.fillStyle='#fdf3dc'; ctx.fillText('X',cx+6,cy+5);
+  region(cx,cy,18,18,()=>{ state.menu=null; });
+  if(state.menu.tab==='bag') drawBag(px,py,pw,ph);
+  else if(state.menu.tab==='status') drawStatus(px,py,pw,ph);
+  else drawJournal(px,py,pw,ph);
+}
+
+function drawBag(px,py,pw,ph){
+  const startX=px+20, startY=py+44, slot=44, gap=8;
+  for(let i=0;i<12;i++){
+    const col=i%6, row=Math.floor(i/6);
+    const sx=startX+col*(slot+gap), sy=startY+row*(slot+gap);
+    const selected = state.menu.sel===i;
+    ctx.fillStyle = selected ? '#f2e2ae' : '#efe3c2';
+    ctx.fillRect(sx,sy,slot,slot);
+    ctx.fillStyle = selected ? '#c9602f' : '#c8b189';
+    ctx.fillRect(sx,sy,slot,1); ctx.fillRect(sx,sy+slot-1,slot,1);
+    ctx.fillRect(sx,sy,1,slot); ctx.fillRect(sx+slot-1,sy,1,slot);
+    const it=state.inv[i];
+    if(it){
+      ctx.save(); ctx.translate(sx+6,sy+4); ctx.scale(2,2); ICONS[it.id](0,0); ctx.restore();
+      ctx.font='bold 8px monospace'; ctx.fillStyle='#3b2f2f';
+      ctx.fillText('x'+it.n, sx+slot-22, sy+slot-11);
+      if(it.id==='glasses' && state.wearingGlasses){ ctx.fillStyle='#5f9b4e'; ctx.fillRect(sx+3,sy+3,4,4); }
+      region(sx,sy,slot,slot, ((idx)=>()=>{ state.menu.sel=idx; })(i));
+    }
+  }
+  // Taschenascher: fester Spezial-Slot
+  const ax=px+344, ay=startY;
+  ctx.fillStyle='#efe3c2'; ctx.fillRect(ax,ay,84,56);
+  ctx.fillStyle='#c8b189';
+  ctx.fillRect(ax,ay,84,1); ctx.fillRect(ax,ay+55,84,1);
+  ctx.fillRect(ax,ay,1,56); ctx.fillRect(ax+83,ay,1,56);
+  ctx.save(); ctx.translate(ax+4,ay+10); ctx.scale(2,2); ICONS.ashtray(0,0); ctx.restore();
+  ctx.font='bold 8px monospace'; ctx.fillStyle='#3b2f2f';
+  ctx.fillText('Taschen-', ax+40, ay+8);
+  ctx.fillText('ascher',   ax+40, ay+18);
+  ctx.fillText(state.ashtray+'/'+CFG.ASH_CAPACITY, ax+40, ay+32);
+  ctx.fillStyle='#3b2f2f'; ctx.fillRect(ax+6,ay+48,72,3);
+  ctx.fillStyle='#8d8d95'; ctx.fillRect(ax+6,ay+48,Math.round(72*state.ashtray/CFG.ASH_CAPACITY),3);
+  // Info-Bereich
+  const ix=px+20, iy=py+160, iw=pw-40, ih=ph-176;
+  ctx.fillStyle='#efe3c2'; ctx.fillRect(ix,iy,iw,ih);
+  ctx.fillStyle='#c8b189';
+  ctx.fillRect(ix,iy,iw,1); ctx.fillRect(ix,iy+ih-1,iw,1);
+  ctx.fillRect(ix,iy,1,ih); ctx.fillRect(ix+iw-1,iy,1,ih);
+  const sel = state.menu.sel>=0 ? state.inv[state.menu.sel] : null;
+  if(sel){
+    const def=ITEMS[sel.id];
+    ctx.font='bold 10px monospace'; ctx.fillStyle='#3b2f2f';
+    ctx.fillText(def.name + (sel.id==='glasses'&&state.wearingGlasses?' (aufgesetzt)':''), ix+10, iy+8);
+    ctx.font='9px monospace'; ctx.fillStyle='#5c5147';
+    drawWrapped(def.desc, ix+10, iy+24, iw-20, 11);
+    let bx2=ix+10;
+    for(const act of def.actions){
+      const label = act==='eat' ? 'Essen' : act==='wear' ? 'Aufsetzen' : 'Benutzen';
+      button(bx2, iy+ih-30, 88, 20, label, ((a,s)=>()=>doItemAction(s,a))(act,sel));
+      bx2+=100;
+    }
+  } else {
+    ctx.font='9px monospace'; ctx.fillStyle='#7a6a50';
+    ctx.fillText('Wähle ein Item aus, um es anzusehen oder zu benutzen.', ix+10, iy+10);
+  }
+}
+
+function drawStatus(px,py,pw,ph){
+  ctx.textBaseline='top';
+  ctx.font='bold 10px monospace'; ctx.fillStyle='#3b2f2f';
+  ctx.fillText('ENERGIE', px+24, py+48);
+  bigBar(px+110, py+48, 220, 10, state.energy/100, '#e8944a');
+  ctx.fillStyle='#3b2f2f'; ctx.fillText(Math.round(state.energy)+'/100', px+340, py+48);
+  ctx.fillText('SOZIAL', px+24, py+72);
+  bigBar(px+110, py+72, 220, 10, state.social/100, '#5f9bd9');
+  ctx.fillStyle='#3b2f2f'; ctx.fillText(Math.round(state.social)+'/100', px+340, py+72);
+  ctx.fillText('SYMPATHIE', px+24, py+106);
+  let y=py+124;
+  for(const s of state.sympathy){
+    ctx.font='9px monospace'; ctx.fillStyle='#3b2f2f';
+    ctx.fillText(s.name, px+24, y);
+    const bx=px+110, bw2=220, mid=bx+bw2/2;
+    ctx.fillStyle='#d8c9a2'; ctx.fillRect(bx,y+1,bw2,7);
+    ctx.fillStyle='#8a8172'; ctx.fillRect(mid,y,1,9);
+    const frac=clamp(s.val/10,-1,1);
+    if(frac>=0){ ctx.fillStyle='#5f9b4e'; ctx.fillRect(mid,y+1,Math.round(bw2/2*frac),7); }
+    else { const w2=Math.round(bw2/2*-frac); ctx.fillStyle='#c9402f'; ctx.fillRect(mid-w2,y+1,w2,7); }
+    ctx.fillStyle='#3b2f2f'; ctx.fillText((s.val>0?'+':'')+deNum(s.val), px+340, y);
+    y+=22;
+  }
+  ctx.font='8px monospace'; ctx.fillStyle='#7a6a50';
+  ctx.fillText('??? = An diese Person erinnerst du dich (noch) nicht.', px+24, y+8);
+}
+function bigBar(x,y,w,h,p,col){
+  ctx.fillStyle='#3b2f2f'; ctx.fillRect(x-1,y-1,w+2,h+2);
+  ctx.fillStyle='#d8c9a2'; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle=col; ctx.fillRect(x,y,Math.round(w*clamp(p,0,1)),h);
+}
+
+function drawJournal(px,py,pw,ph){
+  ctx.textBaseline='top';
+  ctx.font='bold 10px monospace'; ctx.fillStyle='#3b2f2f';
+  ctx.fillText('MISSIONEN', px+24, py+48);
+  ctx.font='9px monospace';
+  let y=py+66;
+  if(state.journal.missions.length===0){
+    ctx.fillStyle='#7a6a50'; ctx.fillText('Noch keine Missionen.', px+32, y); y+=14;
+  }
+  for(const m of state.journal.missions){
+    ctx.fillStyle = m.done ? '#5f9b4e' : '#3b2f2f';
+    ctx.fillText((m.done?'[x] ':'[ ] ')+'Finde '+(state.friendName||'???')+(m.done?'  – abgeschlossen!':''), px+32, y);
+    y+=14;
+  }
+  y+=16;
+  ctx.font='bold 10px monospace'; ctx.fillStyle='#3b2f2f';
+  ctx.fillText('ERINNERUNGEN', px+24, y); y+=18;
+  ctx.font='9px monospace';
+  if(state.journal.memories.length===0){
+    ctx.fillStyle='#7a6a50'; ctx.fillText('Dein Kopf ist noch ziemlich leer...', px+32, y);
+  }
+  for(const mem of state.journal.memories){
+    ctx.fillStyle='#3b2f2f'; ctx.fillText('* '+mem, px+32, y); y+=14;
+  }
+}
+
+function drawToasts(){
+  ctx.font='8px monospace'; ctx.textBaseline='top';
+  let y=42;
+  for(const t of toasts.slice(0,3)){
+    const a=clamp(t.t,0,1);
+    const w=ctx.measureText(t.text).width+12;
+    const x=(GAME_W-w)/2;
+    ctx.fillStyle='rgba(58,47,47,'+(0.85*a).toFixed(2)+')'; ctx.fillRect(x,y,w,13);
+    ctx.fillStyle='rgba(253,243,220,'+a.toFixed(2)+')'; ctx.fillText(t.text,x+6,y+3);
+    y+=16;
+  }
+}
+function drawSmokeBubble(){
+  if(state.smoke.phase==='none' || state.cutscene || state.menu) return;
+  const text = state.smoke.phase==='rolling' ? 'dreht eine Zigarette...' : 'raucht entspannt...';
+  ctx.font='8px monospace'; ctx.textBaseline='top';
+  const w=ctx.measureText(text).width+8;
+  const x=Math.round(player.x-camX-w/2), y=Math.round(player.y-camY)-34;
+  ctx.fillStyle='rgba(253,243,220,0.92)'; ctx.fillRect(x,y,w,14);
+  ctx.fillStyle='#5a4632';
+  ctx.fillRect(x,y,w,1); ctx.fillRect(x,y+13,w,1);
+  ctx.fillRect(x,y,1,14); ctx.fillRect(x+w-1,y,1,14);
+  ctx.fillStyle='#3b2f2f'; ctx.fillText(text,x+4,y+3);
+  if(state.smoke.phase==='rolling'){
+    const p=clamp(state.smoke.t/CFG.ROLL_SEC,0,1);
+    ctx.fillStyle='#c9a03f'; ctx.fillRect(x+2,y+11,Math.round((w-4)*p),1);
+  }
+}
+
+/* --- Charaktererstellung --- */
+function drawMiniTent(x,base,col){
+  for(let i=0;i<16;i++){
+    const half=Math.max(1,Math.round(i/16*12));
+    ctx.fillStyle=col; ctx.fillRect(x-half,base-16+i,half*2,1);
+  }
+  ctx.fillStyle='#3b2f2f'; ctx.fillRect(x-2,base-6,4,6);
+}
+function creationPreview(cx,baseY){
+  const pal=playerPal();
+  let grid, flip=false;
+  if(creation.face==='up') grid=BODY_UP;
+  else if(creation.face==='down') grid=BODY_DOWN;
+  else { grid=BODY_SIDE; flip=(creation.face==='right'); }
+  const fr=Math.floor(creation.t*5)%4;
+  const legs = fr===1?LEGS_A : fr===3?LEGS_B : LEGS_IDLE;
+  const g=grid.slice(0,13).concat(legs);
+  ctx.save(); ctx.translate(cx-36, baseY-96); ctx.scale(6,6);
+  drawGrid(g,pal,0,0,flip);
+  ctx.restore();
+}
+function optionRow(x,y,label,key,count){
+  ctx.font='bold 9px monospace'; ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
+  ctx.fillText(label,x,y+4);
+  const ax=x+92;
+  arrowBtn(ax,y,-1,key,count);
+  const col = key==='skin' ? SKINS[creation.skin].s : key==='hair' ? HAIRS[creation.hair].h : OUTFITS[creation.outfit].c;
+  ctx.fillStyle='#5a4632'; ctx.fillRect(ax+22,y-1,40,18);
+  ctx.fillStyle=col; ctx.fillRect(ax+24,y+1,36,14);
+  arrowBtn(ax+68,y,1,key,count);
+}
+function arrowBtn(x,y,dir,key,count){
+  ctx.fillStyle='#5a4632'; ctx.fillRect(x,y,16,16);
+  ctx.font='bold 10px monospace'; ctx.fillStyle='#fdf3dc'; ctx.textBaseline='top';
+  ctx.fillText(dir<0?'<':'>', x+5, y+3);
+  region(x,y,16,16,()=>{ creation[key]=(creation[key]+dir+count)%count; });
+}
+function drawCreation(){
+  ctx.fillStyle='#ffe3b3'; ctx.fillRect(0,0,GAME_W,120);
+  ctx.fillStyle='#ffd28e'; ctx.fillRect(0,120,GAME_W,60);
+  ctx.fillStyle='#a3cf6b'; ctx.fillRect(0,180,GAME_W,GAME_H-180);
+  pixCircle(408,44,16,'#f8e08a'); pixCircle(408,44,11,'#fdf0b8');
+  drawMiniTent(46,178,'#e8836f'); drawMiniTent(88,184,'#9b7fc9'); drawMiniTent(430,182,'#5fb3a8');
+  ctx.textBaseline='top';
+  ctx.font='bold 26px monospace';
+  const title='FESTIVALFIEBER';
+  const tw=ctx.measureText(title).width;
+  ctx.fillStyle='#5a4632'; ctx.fillText(title,(GAME_W-tw)/2+2,18);
+  ctx.fillStyle='#e8944a'; ctx.fillText(title,(GAME_W-tw)/2,16);
+  ctx.font='10px monospace'; ctx.fillStyle='#7a5a30';
+  const sub='Akt 1: Aufbau · spielbarer Prototyp';
+  ctx.fillText(sub,(GAME_W-ctx.measureText(sub).width)/2,46);
+  // Vorschau
+  panel(48,86,140,180);
+  ctx.fillStyle='#a3cf6b'; ctx.fillRect(58,110,120,124);
+  creationPreview(118,218);
+  ctx.font='8px monospace'; ctx.fillStyle='#3b2f2f';
+  ctx.fillText('Klick auf die Figur: drehen',60,242);
+  region(58,110,120,124,()=>{ const i=FACE_CYCLE.indexOf(creation.face); creation.face=FACE_CYCLE[(i+1)%4]; });
+  ctx.font='bold 9px monospace'; ctx.fillStyle='#3b2f2f';
+  ctx.fillText('Deine Figur',82,94);
+  // Optionen
+  panel(216,86,220,180);
+  optionRow(232,104,'Hautfarbe','skin',SKINS.length);
+  optionRow(232,134,'Haarfarbe','hair',HAIRS.length);
+  optionRow(232,164,'Outfit','outfit',OUTFITS.length);
+  ctx.font='bold 9px monospace'; ctx.fillStyle='#3b2f2f';
+  ctx.fillText('Name:',232,198);
+  button(292,230,120,22,"Los geht's!",confirmCreation);
+}
+
+/* --- HTML-Eingabefelder positionieren --- */
+function placeNameInput(){
+  nameInput.style.left=(280*SCALE)+'px';
+  nameInput.style.top=(193*SCALE)+'px';
+  nameInput.style.width=(132*SCALE)+'px';
+  nameInput.style.fontSize=(9*SCALE)+'px';
+  nameInput.style.borderWidth=Math.max(2,Math.round(2*SCALE))+'px';
+}
+function showNameInput(){ nameInput.style.display='block'; placeNameInput(); nameInput.focus(); }
+function hideNameInput(){ nameInput.style.display='none'; nameInput.blur(); }
+function placeFriendInput(){
+  friendInput.style.left=(160*SCALE)+'px';
+  friendInput.style.top=(140*SCALE)+'px';
+  friendInput.style.width=(160*SCALE)+'px';
+  friendInput.style.fontSize=(9*SCALE)+'px';
+  friendInput.style.borderWidth=Math.max(2,Math.round(2*SCALE))+'px';
+}
+function showFriendInput(){ friendInput.value=''; friendInput.style.display='block'; placeFriendInput(); friendInput.focus(); }
+function hideFriendInput(){ friendInput.style.display='none'; friendInput.blur(); }
+function submitFriendName(){
+  const v=friendInput.value.trim()||'Stella';
+  hideFriendInput();
+  setFriend(v);
+  if(state.dialog){ state.dialog.inputActive=false; goNext('direction'); }
+}
+function confirmCreation(){
+  state.playerName = nameInput.value.trim()||'Alex';
+  hideNameInput();
+  startGame();
+}
+
+/* --- Canvas an die Fenstergröße anpassen (ganzzahlige Pixel-Skalierung) --- */
+function fitCanvas(){
+  SCALE = Math.max(1, Math.floor(Math.min(
+    window.innerWidth  / GAME_W,
+    window.innerHeight / GAME_H
+  )));
+  canvas.style.width  = (GAME_W*SCALE)+'px';
+  canvas.style.height = (GAME_H*SCALE)+'px';
+  if(nameInput.style.display==='block')   placeNameInput();
+  if(friendInput.style.display==='block') placeFriendInput();
+}
+
+/* ============ 12. INTRO & HAUPTSCHLEIFE ============ */
+let introPhase='wait', introT=0;
+function startGame(){
+  state.mode='game';
+  state.cutscene=true;
+  state.whiteAlpha=1; state.whiteTarget=0.88;   // "Es ist sooo hell..."
+  player.pal=playerPal();
+  player.facing='down';
+  introPhase='wait'; introT=0;
+}
+function introUpdate(dt){
+  const harvey=npcs.find(n=>n.id==='harvey');
+  if(introPhase==='wait'){
+    introT+=dt;
+    if(introT>0.9){ introPhase='walk'; harvey.moving=true; }
+  } else if(introPhase==='walk'){
+    const tx=player.x-18, ty=player.y+1;
+    const dx=tx-harvey.x, dy=ty-harvey.y, dist=Math.hypot(dx,dy);
+    if(dist<3){
+      harvey.moving=false; harvey.frame=0;
+      harvey.facing='right'; player.facing='left';
+      introPhase='talkWait'; introT=0;
+    } else {
+      const spd=55*dt;
+      harvey.x+=dx/dist*spd; harvey.y+=dy/dist*spd;
+      harvey.facing = Math.abs(dx)>Math.abs(dy) ? (dx>0?'right':'left') : (dy>0?'down':'up');
+      harvey.animT+=dt; harvey.frame=Math.floor(harvey.animT*7)%4;
+    }
+  } else if(introPhase==='talkWait'){
+    introT+=dt;
+    if(introT>0.5){ introPhase='talk'; startDialog('intro1',{breakable:false}); }
+  } else if(introPhase==='talk'){
+    if(!state.dialog && state.flags.introDone){
+      state.cutscene=false;
+      state.helpTimer=20;
+    }
+  }
+}
+
+function update(dt){
+  state.time+=dt;
+  updateToasts(dt);
+  state.whiteAlpha += (state.whiteTarget-state.whiteAlpha)*Math.min(1,dt*2.2);
+  if(Math.abs(state.whiteAlpha-state.whiteTarget)<0.005) state.whiteAlpha=state.whiteTarget;
+  if(state.mode==='create'){ creation.t+=dt; interactQueued=false; escQueued=false; return; }
+  if(state.helpTimer>0) state.helpTimer-=dt;
+  if(escQueued){
+    escQueued=false;
+    if(!state.dialog && !state.cutscene){
+      state.menu = state.menu ? null : {tab:'bag', sel:-1};
+      state.idleSince=0;
+    }
+  }
+  if(state.menu){ interactQueued=false; return; }
+  if(state.dialog){
+    const d=state.dialog;
+    if(!d.inputActive) d.chars += CFG.TYPE_SPEED*dt;
+    if(interactQueued){ interactQueued=false; advanceDialog(); }
+    particlesUpdate(dt); fireEmit(dt);
+    return;
+  }
+  if(state.cutscene){
+    introUpdate(dt); particlesUpdate(dt); fireEmit(dt);
+    interactQueued=false;
+    return;
+  }
+  playerUpdate(dt);
+  npcUpdate(dt);
+  smokeUpdate(dt);
+  statusUpdate(dt);
+  particlesUpdate(dt);
+  fireEmit(dt);
+  findCandidate();
+  if(interactQueued){ interactQueued=false; tryInteract(); }
+}
+
+function draw(){
+  uiRegions.length=0;
+  ctx.fillStyle='#241f2e'; ctx.fillRect(0,0,GAME_W,GAME_H);
+  if(state.mode==='create'){ drawCreation(); return; }
+  camX=clamp(Math.round(player.x-GAME_W/2), 0, MAPW*TILE-GAME_W);
+  camY=clamp(Math.round(player.y-GAME_H/2-10), 0, MAPH*TILE-GAME_H);
+  ctx.save(); ctx.translate(-camX,-camY);
+  ctx.drawImage(ground,0,0);
+  for(const s of stubsOnGround) drawStub(s);
+  const list=[];
+  for(const o of objects) list.push({y:o.base, f:()=>drawObject(o)});
+  list.push({y:player.y, f:drawPlayerEnt});
+  for(const n of npcs) list.push({y:n.y, f:()=>drawEntity(n)});
+  list.sort((a,b)=>a.y-b.y);
+  for(const it of list) it.f();
+  for(const p of particles){
+    ctx.fillStyle=p.col;
+    ctx.fillRect(Math.round(p.x),Math.round(p.y),p.size,p.size);
+  }
+  drawBunting(96,56,176,42);      // Wimpel im Spieler-Camp
+  drawBunting(560,378,640,392);   // Wimpel im Camp im Südosten
+  ctx.restore();
+  // 'E'-Hinweis über interagierbaren Dingen
+  if(!state.dialog && !state.menu && !state.cutscene && currentCandidate){
+    const bx=Math.round(currentCandidate.x-camX)-5, by=Math.round(currentCandidate.y-camY)-12;
+    ctx.fillStyle='#fdf3dc'; ctx.fillRect(bx,by,11,12);
+    ctx.fillStyle='#5a4632';
+    ctx.fillRect(bx,by,11,1); ctx.fillRect(bx,by+11,11,1);
+    ctx.fillRect(bx,by,1,12); ctx.fillRect(bx+10,by,1,12);
+    ctx.font='bold 8px monospace'; ctx.fillStyle='#5a4632'; ctx.textBaseline='top';
+    ctx.fillText('E',bx+3,by+2);
+  }
+  drawSmokeBubble();
+  if(state.whiteAlpha>0.004){
+    ctx.fillStyle='rgba(255,247,225,'+state.whiteAlpha.toFixed(3)+')';
+    ctx.fillRect(0,0,GAME_W,GAME_H);
+  }
+  drawHUD();
+  if(state.dialog) drawDialog();
+  if(state.menu) drawMenu();
+  drawToasts();
+  if(state.helpTimer>0 && !state.dialog && !state.menu){
+    ctx.font='8px monospace'; ctx.textBaseline='top';
+    const msg='WASD/Pfeile: laufen · E: reden · I: Menü';
+    const w=ctx.measureText(msg).width;
+    ctx.fillStyle='rgba(30,25,40,0.6)'; ctx.fillRect(GAME_W/2-w/2-5,GAME_H-17,w+10,13);
+    ctx.fillStyle='#fdf3dc'; ctx.fillText(msg,GAME_W/2-w/2,GAME_H-14);
+  }
+}
+
+/* --- Eingaben --- */
+const keys={};
+let interactQueued=false, escQueued=false;
+const uiRegions=[];
+function region(x,y,w,h,cb){ uiRegions.push({x,y,w,h,cb}); }
+
+addEventListener('keydown', e=>{
+  if(document.activeElement===nameInput || document.activeElement===friendInput){
+    if(e.key==='Enter'){
+      e.preventDefault();
+      if(document.activeElement===nameInput) confirmCreation(); else submitFriendName();
+    }
+    return;
+  }
+  const k=e.key.toLowerCase();
+  if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
+  if(state.dialog && state.dialog.choiceCount>0){
+    if(k==='arrowup'||k==='w'){
+      state.dialog.choiceIdx=(state.dialog.choiceIdx-1+state.dialog.choiceCount)%state.dialog.choiceCount;
+      return;
+    }
+    if(k==='arrowdown'||k==='s'){
+      state.dialog.choiceIdx=(state.dialog.choiceIdx+1)%state.dialog.choiceCount;
+      return;
+    }
+  }
+  keys[k]=true;
+  if(k==='e'||k===' '||k==='enter') interactQueued=true;
+  if(k==='i'||k==='escape') escQueued=true;
+});
+addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+
+canvas.addEventListener('click', e=>{
+  const r=canvas.getBoundingClientRect();
+  const mx=(e.clientX-r.left)/SCALE, my=(e.clientY-r.top)/SCALE;
+  for(let i=uiRegions.length-1;i>=0;i--){
+    const u=uiRegions[i];
+    if(mx>=u.x && mx<u.x+u.w && my>=u.y && my<u.y+u.h){ u.cb(); return; }
+  }
+  if(state.dialog) advanceDialog();
+});
+addEventListener('resize', fitCanvas);
+
+/* --- Start --- */
+buildWorld();
+addNPC('harvey','Harvey',120,116,HARVEY_PAL,HARVEY_GRIDS,PORTRAIT_HARVEY,PORTRAIT_HARVEY_PAL,harveyTalk);
+addNPC('friend','???',588,468,FRIEND_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
+player.pal=playerPal();
+fitCanvas();
+showNameInput();
+let last=performance.now();
+function frameLoop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  update(dt);
+  draw();
+  requestAnimationFrame(frameLoop);
+}
+requestAnimationFrame(frameLoop);
+</script>
+</body>
+</html>
