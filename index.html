@@ -8,7 +8,7 @@
   html,body{margin:0;height:100%;background:#241f2e;overflow:hidden}
   body{display:flex;align-items:center;justify-content:center}
   #wrap{position:relative}
-  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
   .pixinput{position:absolute;display:none;font-family:"Courier New",monospace;font-weight:bold;
     background:#fdf3dc;border:3px solid #5a4632;color:#3b2f2f;padding:2px 6px;outline:none;box-sizing:border-box}
 </style>
@@ -54,7 +54,9 @@ const CFG = {
   PLAYER_SPEED: 70,          // Pixel pro Sekunde
   TYPE_SPEED: 45,            // Buchstaben pro Sekunde im Dialog
   ASH_CAPACITY: 10,          // Fassungsvermögen Taschenascher
-  LITTER_PENALTY: 0.5        // Sympathie-Abzug bei allen, wenn Stummel auf den Boden fliegt
+  LITTER_PENALTY: 0.5,       // Sympathie-Abzug bei allen, wenn Stummel auf den Boden fliegt
+  BIN_CORRECT_BONUS: 0.5,    // Sympathie-Plus bei allen: Ascher im Restmüll geleert
+  BIN_WRONG_PENALTY: 1       // Sympathie-Minus bei allen: Ascher im Plastikmüll geleert
 };
 
 /* ============ 1. GRUNDGERÜST ============ */
@@ -449,9 +451,17 @@ function addSign(tx,ty,text){
   objects.push({ type:'sign', x, base, text, label:'Schild',
     ax:x, ay:base, solid:{x:x-2, y:base-4, w:4, h:4} });
 }
+function addBin(tx,ty,kind){   // kind: 'rest' oder 'plastik'
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'bin', kind, x, base,
+    label: kind==='rest' ? 'Restmüll' : 'Plastikmüll',
+    talk: binTalk,                             // eigene Interaktion statt objTalk
+    ax:x, ay:base, solid:{x:x-5, y:base-6, w:10, h:6} });
+}
 function addFire(tx,ty,small){
   const x=tx*TILE+8, base=(ty+1)*TILE;
   objects.push({ type:'fire', x, base, small:!!small, emitT:0,
+    label:'Lagerfeuer', talk:fireTalk, ax:x, ay:base,
     solid:{x:x-6, y:base-6, w:12, h:6} });
 }
 function addHammock(tx,ty){
@@ -476,6 +486,8 @@ function buildWorld(){
   addSign(14,10,'Hauptweg nach Osten. Festivalgelände: noch gesperrt (Aufbau!)');
   // Dixi-Klos am Weg
   addToilet(27,13); addToilet(29,13); addToilet(31,13);
+  addBin(26,14,'rest');      // Restmüll links der Klos
+  addBin(32,14,'plastik');   // Plastikmüll rechts der Klos
   addSign(26,16,'Dixi-Klos. Bitte sauber halten!');
   addSign(24,19,'Süden: weitere Camps');
   // Stellas Camp (Südosten)
@@ -558,6 +570,34 @@ function drawSign(o){
   ctx.fillStyle='#6d4a2f';
   ctx.fillRect(o.x-6,o.base-13,13,1); ctx.fillRect(o.x-6,o.base-11,9,1);
 }
+function drawBin(o){
+  const rest = o.kind==='rest';
+  ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(o.x-6,o.base-2,12,3);
+  // Tonne (leicht konisch: unten schmaler)
+  ctx.fillStyle = rest ? '#6d7178' : '#e8c435';
+  ctx.fillRect(o.x-6,o.base-12,12,10);
+  ctx.fillRect(o.x-5,o.base-2,10,2);
+  ctx.fillStyle = rest ? '#565a61' : '#c9a51f';       // Schattenkante rechts
+  ctx.fillRect(o.x+4,o.base-12,2,12);
+  ctx.fillStyle = rest ? '#83878e' : '#f2d55e';       // Lichtkante links
+  ctx.fillRect(o.x-6,o.base-12,1,10);
+  // Deckel mit Griff
+  ctx.fillStyle = rest ? '#4a4e55' : '#8a7a1f';
+  ctx.fillRect(o.x-7,o.base-15,14,3);
+  ctx.fillRect(o.x-2,o.base-17,4,2);
+  // Symbol auf der Front
+  if(rest){
+    ctx.fillStyle='#3b3f45';                          // Mülltüten-Silhouette
+    ctx.fillRect(o.x-2,o.base-9,4,4);
+    ctx.fillRect(o.x-1,o.base-10,2,1);
+  } else {
+    ctx.fillStyle='#8a7a1f';                          // Recycling-Dreieck (angedeutet)
+    ctx.fillRect(o.x-2,o.base-10,4,1);
+    ctx.fillRect(o.x-2,o.base-10,1,4);
+    ctx.fillRect(o.x+1,o.base-10,1,4);
+    ctx.fillRect(o.x-2,o.base-7,4,1);
+  }
+}
 function drawFire(o){
   ctx.fillStyle='#8d8d95';   // Steinkreis
   ctx.fillRect(o.x-8,o.base-3,3,2); ctx.fillRect(o.x+5,o.base-3,3,2);
@@ -611,6 +651,7 @@ function drawObject(o){
     case 'bush':    drawBush(o); break;
     case 'toilet':  drawToilet(o); break;
     case 'sign':    drawSign(o); break;
+    case 'bin':     drawBin(o); break;
     case 'fire':    drawFire(o); break;
     case 'hammock': drawHammock(o); break;
   }
@@ -662,6 +703,9 @@ function playerUpdate(dt){
   if(keys['s']||keys['arrowdown'])  dy+=1;
   if(keys['a']||keys['arrowleft'])  dx-=1;
   if(keys['d']||keys['arrowright']) dx+=1;
+  // Virtueller Joystick (Touch) fließt hier einfach mit ein
+  dx += touch.dx;
+  dy += touch.dy;
   const moving = (dx!==0 || dy!==0);
   player.moving = moving;
   if(moving){
@@ -975,6 +1019,120 @@ function friendTalk(){
   }
 }
 
+/* --- Mülleimer: Taschenascher ausleeren --- */
+function binTalk(o){
+  const isRest = o.kind==='rest';
+  const look = isRest
+    ? 'Ein Eimer für Restmüll. Riecht wie... Festival.'
+    : 'Ein Eimer für Plastikmüll. Becher, Flaschen, Verpackungen.';
+  if(state.ashtray<=0){
+    startDialog(lin([
+      { who:'sys', name:o.label, text: look+' Dein Taschenascher ist gerade leer.' }
+    ]), {breakable:true});
+    return;
+  }
+  startDialog({ who:'sys', name:o.label,
+    text: look+' Taschenascher hier ausleeren? ('+state.ashtray+'/'+CFG.ASH_CAPACITY+' Stummel)',
+    choices:[
+      { t:'Ausleeren', next:null, fx(){ emptyAshtray(isRest); } },
+      { t:'Lieber nicht', next:null }
+    ]
+  }, {breakable:true});
+}
+function emptyAshtray(isRest){
+  const n=state.ashtray;
+  state.ashtray=0;
+  if(isRest){
+    sympathyAll(CFG.BIN_CORRECT_BONUS);
+    toast(n+' Stummel korrekt entsorgt: +'+deNum(CFG.BIN_CORRECT_BONUS)+' Sympathie bei allen.');
+  } else {
+    sympathyAll(-CFG.BIN_WRONG_PENALTY);
+    toast('Kippen im Plastikmüll?! -'+deNum(CFG.BIN_WRONG_PENALTY)+' Sympathie bei allen.');
+  }
+}
+
+/* --- Lagerfeuer: Spielstand speichern --- */
+const SAVE_KEY = 'festivalfieber_save';
+function fireTalk(o){
+  startDialog({ who:'sys', name:'Lagerfeuer',
+    text:'Das Feuer knistert gemütlich. Ein guter Moment zum Durchatmen. Spiel speichern?',
+    choices:[
+      { t:'Speichern', next:null, fx(){ saveGame(); } },
+      { t:'Nicht speichern', next:null }
+    ]
+  }, {breakable:false});
+}
+// Packt alles Wichtige in ein Objekt und legt es im Browser-Speicher ab
+function saveGame(){
+  const data = {
+    v:1,
+    playerName: state.playerName,
+    creation: { skin:creation.skin, hair:creation.hair, outfit:creation.outfit },
+    player: { x:Math.round(player.x), y:Math.round(player.y), facing:player.facing },
+    inv: state.inv,
+    wearingGlasses: state.wearingGlasses,
+    ashtray: state.ashtray,
+    sympathy: state.sympathy,
+    friendName: state.friendName,
+    flags: state.flags,
+    journal: state.journal,
+    energy: Math.round(state.energy),
+    social: Math.round(state.social)
+  };
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+    toast('Spielstand gespeichert!');
+  } catch(err) {
+    toast('Speichern fehlgeschlagen – der Browser erlaubt hier kein localStorage.');
+  }
+}
+// Liest den Spielstand (oder null, wenn keiner existiert / Speicher gesperrt ist)
+function readSave(){
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(err) { return null; }
+}
+// Stellt einen gespeicherten Stand wieder her und springt direkt ins Spiel
+function loadGame(s){
+  try {
+    state.playerName = s.playerName || 'Alex';
+    if(s.creation){
+      creation.skin   = clamp(s.creation.skin|0,   0, SKINS.length-1);
+      creation.hair   = clamp(s.creation.hair|0,   0, HAIRS.length-1);
+      creation.outfit = clamp(s.creation.outfit|0, 0, OUTFITS.length-1);
+    }
+    player.x = s.player.x; player.y = s.player.y;
+    player.facing = s.player.facing || 'down';
+    player.pal = playerPal();
+    state.inv = Array.isArray(s.inv) ? s.inv : [];
+    state.wearingGlasses = !!s.wearingGlasses;
+    state.ashtray = clamp(s.ashtray|0, 0, CFG.ASH_CAPACITY);
+    if(Array.isArray(s.sympathy)){
+      for(const sv of s.sympathy){
+        const t = state.sympathy.find(x=>x.id===sv.id);
+        if(t){ t.val = sv.val; t.name = sv.name; }
+      }
+    }
+    if(s.friendName) setFriend(s.friendName);
+    Object.assign(state.flags, s.flags||{});
+    if(s.journal) state.journal = s.journal;
+    state.energy = clamp(s.energy ?? 72, 0, 100);
+    state.social = clamp(s.social ?? 60, 0, 100);
+    // Überblendung passend zum Brillen-Zustand wiederherstellen
+    state.whiteTarget = state.wearingGlasses ? 0 : (getItem('glasses') ? 0.32 : 0.5);
+    state.whiteAlpha = state.whiteTarget;
+    state.mode='game'; state.cutscene=false;
+    state.helpTimer=8;
+    toast("Spielstand geladen. Weiter geht's!");
+  } catch(err) {
+    // Kaputter Spielstand? Dann eben ein neues Spiel.
+    state.mode='create';
+    showNameInput();
+    toast('Spielstand konnte nicht geladen werden – neues Spiel.');
+  }
+}
+
 /* ============ 10. INTERAKTION ============ */
 let currentCandidate = null;
 function facingVec(){
@@ -994,9 +1152,13 @@ function findCandidate(){
     if(d<bestD){ bestD=d; best={x:n.x, y:n.y-18, act:()=>n.talk(n)}; }
   }
   for(const o of objects){
-    if(!o.text) continue;
+    if(!o.text && !o.talk) continue;
     const d=Math.hypot(o.ax-px, o.ay-4-py);
-    if(d<bestD){ bestD=d; best={x:o.ax, y:(o.type==='tent'? o.y+14 : o.ay-22), act:()=>objTalk(o)}; }
+    if(d<bestD){
+      bestD=d;
+      best={x:o.ax, y:(o.type==='tent'? o.y+14 : o.ay-22),
+            act:()=> o.talk ? o.talk(o) : objTalk(o)};
+    }
   }
   currentCandidate = best;
 }
@@ -1358,7 +1520,7 @@ function arrowBtn(x,y,dir,key,count){
   ctx.fillText(dir<0?'<':'>', x+5, y+3);
   region(x,y,16,16,()=>{ creation[key]=(creation[key]+dir+count)%count; });
 }
-function drawCreation(){
+function drawStartBackdrop(){
   ctx.fillStyle='#ffe3b3'; ctx.fillRect(0,0,GAME_W,120);
   ctx.fillStyle='#ffd28e'; ctx.fillRect(0,120,GAME_W,60);
   ctx.fillStyle='#a3cf6b'; ctx.fillRect(0,180,GAME_W,GAME_H-180);
@@ -1373,6 +1535,19 @@ function drawCreation(){
   ctx.font='10px monospace'; ctx.fillStyle='#7a5a30';
   const sub='Akt 1: Aufbau · spielbarer Prototyp';
   ctx.fillText(sub,(GAME_W-ctx.measureText(sub).width)/2,46);
+}
+// Titelbildschirm, wenn ein Spielstand gefunden wurde
+function drawTitle(){
+  drawStartBackdrop();
+  panel(150,118,180,116);
+  ctx.font='bold 9px monospace'; ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
+  const msg='Spielstand gefunden!';
+  ctx.fillText(msg, 240-ctx.measureText(msg).width/2, 130);
+  button(170,152,140,24,'Weiterspielen',()=>{ loadGame(state.pendingSave); });
+  button(170,192,140,24,'Neues Spiel',()=>{ state.mode='create'; showNameInput(); });
+}
+function drawCreation(){
+  drawStartBackdrop();
   // Vorschau
   panel(48,86,140,180);
   ctx.fillStyle='#a3cf6b'; ctx.fillRect(58,110,120,124);
@@ -1479,6 +1654,7 @@ function update(dt){
   updateToasts(dt);
   state.whiteAlpha += (state.whiteTarget-state.whiteAlpha)*Math.min(1,dt*2.2);
   if(Math.abs(state.whiteAlpha-state.whiteTarget)<0.005) state.whiteAlpha=state.whiteTarget;
+  if(state.mode==='title'){ interactQueued=false; escQueued=false; return; }
   if(state.mode==='create'){ creation.t+=dt; interactQueued=false; escQueued=false; return; }
   if(state.helpTimer>0) state.helpTimer-=dt;
   if(escQueued){
@@ -1514,7 +1690,8 @@ function update(dt){
 function draw(){
   uiRegions.length=0;
   ctx.fillStyle='#241f2e'; ctx.fillRect(0,0,GAME_W,GAME_H);
-  if(state.mode==='create'){ drawCreation(); return; }
+  if(state.mode==='title'){ drawTitle(); drawToasts(); return; }
+  if(state.mode==='create'){ drawCreation(); drawToasts(); return; }
   camX=clamp(Math.round(player.x-GAME_W/2), 0, MAPW*TILE-GAME_W);
   camY=clamp(Math.round(player.y-GAME_H/2-10), 0, MAPH*TILE-GAME_H);
   ctx.save(); ctx.translate(-camX,-camY);
@@ -1549,6 +1726,8 @@ function draw(){
     ctx.fillRect(0,0,GAME_W,GAME_H);
   }
   drawHUD();
+  drawTouchPad();
+  drawTouchButton();
   if(state.dialog) drawDialog();
   if(state.menu) drawMenu();
   drawToasts();
@@ -1604,13 +1783,99 @@ canvas.addEventListener('click', e=>{
 });
 addEventListener('resize', fitCanvas);
 
+/* ============ TOUCH-STEUERUNG (virtueller Joystick) ============ */
+// Erkennung: Ist das ein Touch-Gerät? Auf dem Laptop mit Maus bleibt alles unsichtbar.
+const IS_TOUCH = window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+
+// Aktueller Zustand: dx/dy ist die Richtung, in die der Finger drückt (-1 bis 1)
+const touch = { id:null, dx:0, dy:0 };
+// Position & Größe des Joysticks unten links (in Spiel-Pixeln, nicht Bildschirm-Pixeln)
+const PAD = { x:56, y:GAME_H-56, r:34, knob:13, dead:8 };
+// Interaktions-Button unten rechts (macht dasselbe wie die E-Taste)
+const BTN_A = { x:GAME_W-48, y:GAME_H-48, r:22 };
+
+// Rechnet eine Finger-Position vom Bildschirm in Spiel-Koordinaten um
+function touchPos(t){
+  const r = canvas.getBoundingClientRect();
+  return { x:(t.clientX-r.left)/SCALE, y:(t.clientY-r.top)/SCALE };
+}
+// Berechnet aus der Fingerposition die Laufrichtung, gerastet auf 8 Richtungen
+function setStick(px,py){
+  const dx=px-PAD.x, dy=py-PAD.y;
+  if(Math.hypot(dx,dy) < PAD.dead){ touch.dx=0; touch.dy=0; return; }  // tote Zone in der Mitte
+  const snap = Math.round(Math.atan2(dy,dx)/(Math.PI/4)) * (Math.PI/4);
+  touch.dx = Math.round(Math.cos(snap)*100)/100;
+  touch.dy = Math.round(Math.sin(snap)*100)/100;
+}
+canvas.addEventListener('touchstart', e=>{
+  for(const t of e.changedTouches){
+    const p=touchPos(t);
+    // Interaktions-Button gedrückt? Wirkt wie ein Druck auf die E-Taste.
+    if(state.mode==='game' && !state.menu && Math.hypot(p.x-BTN_A.x, p.y-BTN_A.y) < BTN_A.r+6){
+      interactQueued=true;
+      e.preventDefault();
+      continue;
+    }
+    // Nur Berührungen in der Nähe des Joysticks steuern ihn (Rest bleibt für Antippen frei)
+    if(touch.id===null && Math.hypot(p.x-PAD.x, p.y-PAD.y) < PAD.r*1.8){
+      touch.id=t.identifier;
+      setStick(p.x,p.y);
+      e.preventDefault();   // verhindert Scrollen/Zoomen während des Steuerns
+    }
+  }
+},{passive:false});
+canvas.addEventListener('touchmove', e=>{
+  for(const t of e.changedTouches){
+    if(t.identifier===touch.id){ const p=touchPos(t); setStick(p.x,p.y); e.preventDefault(); }
+  }
+},{passive:false});
+function releaseStick(e){
+  for(const t of e.changedTouches){
+    if(t.identifier===touch.id){ touch.id=null; touch.dx=0; touch.dy=0; }
+  }
+}
+canvas.addEventListener('touchend', releaseStick);
+canvas.addEventListener('touchcancel', releaseStick);
+
+// Zeichnet den Joystick (halbtransparent, Knopf folgt dem Finger)
+function drawTouchPad(){
+  if(!IS_TOUCH || state.mode!=='game' || state.dialog || state.menu || state.cutscene) return;
+  ctx.globalAlpha=0.45;
+  pixCircle(PAD.x, PAD.y, PAD.r,   '#3b2f2f');   // dunkler Ring
+  pixCircle(PAD.x, PAD.y, PAD.r-3, '#fdf3dc');   // helle Fläche
+  ctx.fillStyle='#8a7a5e';                        // vier Richtungs-Markierungen
+  ctx.fillRect(PAD.x-1, PAD.y-PAD.r+6, 2, 5);
+  ctx.fillRect(PAD.x-1, PAD.y+PAD.r-11, 2, 5);
+  ctx.fillRect(PAD.x-PAD.r+6, PAD.y-1, 5, 2);
+  ctx.fillRect(PAD.x+PAD.r-11, PAD.y-1, 5, 2);
+  const kx=PAD.x+touch.dx*(PAD.r-15), ky=PAD.y+touch.dy*(PAD.r-15);
+  pixCircle(kx, ky, PAD.knob,   '#5a4632');       // Knopf
+  pixCircle(kx, ky, PAD.knob-3, '#e8944a');
+  ctx.globalAlpha=1;
+}
+// Zeichnet den Interaktions-Button (leuchtet auf, wenn etwas in Reichweite ist)
+function drawTouchButton(){
+  if(!IS_TOUCH || state.mode!=='game' || state.menu || state.cutscene) return;
+  const active = !state.dialog && !!currentCandidate;   // etwas Ansprechbares in der Nähe?
+  ctx.globalAlpha = (active || state.dialog) ? 0.9 : 0.4;
+  pixCircle(BTN_A.x, BTN_A.y, BTN_A.r,   '#3b2f2f');
+  pixCircle(BTN_A.x, BTN_A.y, BTN_A.r-3, active ? '#e8944a' : '#fdf3dc');
+  ctx.font='bold 12px monospace'; ctx.textBaseline='top';
+  ctx.fillStyle = active ? '#fdf3dc' : '#5a4632';
+  ctx.fillText('E', BTN_A.x-4, BTN_A.y-6);
+  ctx.globalAlpha=1;
+}
+
 /* --- Start --- */
 buildWorld();
 addNPC('harvey','Harvey',120,116,HARVEY_PAL,HARVEY_GRIDS,PORTRAIT_HARVEY,PORTRAIT_HARVEY_PAL,harveyTalk);
 addNPC('friend','???',588,468,FRIEND_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
 player.pal=playerPal();
 fitCanvas();
-showNameInput();
+// Gibt es einen Spielstand? Dann Auswahl anbieten, sonst direkt zur Charaktererstellung.
+const bootSave = readSave();
+if(bootSave){ state.mode='title'; state.pendingSave=bootSave; }
+else showNameInput();
 let last=performance.now();
 function frameLoop(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
