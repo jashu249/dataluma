@@ -71,7 +71,8 @@ let camX = 0, camY = 0;
 
 // Der zentrale Spielzustand: alles, was sich im Spiel verändert, lebt hier.
 const state = {
-  mode: 'create',            // 'create' (Charaktererstellung) oder 'game'
+  mode: 'create',            // 'title' (Slot-Auswahl), 'create' (Charaktererstellung) oder 'game'
+  slot: 1,                   // aktiver Speicherslot (1-3)
   cutscene: false,           // true = Intro läuft, Steuerung gesperrt
   dialog: null,              // aktives Gespräch (oder null)
   menu: null,                // offenes Menü {tab, sel} (oder null)
@@ -1051,19 +1052,39 @@ function emptyAshtray(isRest){
   }
 }
 
-/* --- Lagerfeuer: Spielstand speichern --- */
-const SAVE_KEY = 'festivalfieber_save';
+/* --- Lagerfeuer: Spielstand speichern (3 Slots) --- */
+const SAVE_SLOTS = 3;
+const SAVE_PREFIX = 'festivalfieber_save_';
+function slotKey(n){ return SAVE_PREFIX + n; }
+// Liest einen Slot (oder null, wenn leer / Speicher gesperrt / kaputt)
+function readSlot(n){
+  try {
+    const raw = localStorage.getItem(slotKey(n));
+    return raw ? JSON.parse(raw) : null;
+  } catch(err) { return null; }
+}
+// Kurze Beschriftung eines Slots, z.B. "Slot 2 – Joshua [aktiv]"
+function slotLabel(n){
+  const s = readSlot(n);
+  return 'Slot '+n+' – '+(s ? (s.playerName||'???') : 'leer')
+       + (state.slot===n ? ' [aktiv]' : '');
+}
 function fireTalk(o){
   startDialog({ who:'sys', name:'Lagerfeuer',
-    text:'Das Feuer knistert gemütlich. Ein guter Moment zum Durchatmen. Spiel speichern?',
-    choices:[
-      { t:'Speichern', next:null, fx(){ saveGame(); } },
-      { t:'Nicht speichern', next:null }
-    ]
+    text:'Das Feuer knistert gemütlich. Ein guter Moment zum Durchatmen. Spiel speichern? Wähle einen Slot.',
+    choices(){
+      const c=[];
+      for(let n=1; n<=SAVE_SLOTS; n++){
+        c.push({ t:slotLabel(n), next:null, fx: ((k)=>()=>saveGame(k))(n) });
+      }
+      c.push({ t:'Nicht speichern', next:null });
+      return c;
+    }
   }, {breakable:false});
 }
-// Packt alles Wichtige in ein Objekt und legt es im Browser-Speicher ab
-function saveGame(){
+// Packt alles Wichtige in ein Objekt und legt es im gewählten Slot ab.
+// Der gewählte Slot wird dabei zum aktiven Slot.
+function saveGame(slot){
   const data = {
     v:1,
     playerName: state.playerName,
@@ -1080,18 +1101,25 @@ function saveGame(){
     social: Math.round(state.social)
   };
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    toast('Spielstand gespeichert!');
+    localStorage.setItem(slotKey(slot), JSON.stringify(data));
+    state.slot = slot;
+    toast('In Slot '+slot+' gespeichert!');
   } catch(err) {
     toast('Speichern fehlgeschlagen – der Browser erlaubt hier kein localStorage.');
   }
 }
-// Liest den Spielstand (oder null, wenn keiner existiert / Speicher gesperrt ist)
-function readSave(){
-  try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch(err) { return null; }
+// Neues Spiel in einem bestimmten Slot beginnen (überschreibt erst beim ersten Speichern)
+function startNewGame(n){
+  state.slot = n;
+  state.mode = 'create';
+  showNameInput();
+}
+// Spielstand aus einem Slot laden
+function loadSlot(n){
+  const s = readSlot(n);
+  if(!s) return;
+  state.slot = n;
+  loadGame(s);
 }
 // Stellt einen gespeicherten Stand wieder her und springt direkt ins Spiel
 function loadGame(s){
@@ -1536,15 +1564,33 @@ function drawStartBackdrop(){
   const sub='Akt 1: Aufbau · spielbarer Prototyp';
   ctx.fillText(sub,(GAME_W-ctx.measureText(sub).width)/2,46);
 }
-// Titelbildschirm, wenn ein Spielstand gefunden wurde
+// Startbildschirm: Auswahl des Speicherslots
 function drawTitle(){
   drawStartBackdrop();
-  panel(150,118,180,116);
-  ctx.font='bold 9px monospace'; ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
-  const msg='Spielstand gefunden!';
-  ctx.fillText(msg, 240-ctx.measureText(msg).width/2, 130);
-  button(170,152,140,24,'Weiterspielen',()=>{ loadGame(state.pendingSave); });
-  button(170,192,140,24,'Neues Spiel',()=>{ state.mode='create'; showNameInput(); });
+  panel(96,84,288,196);
+  ctx.font='bold 10px monospace'; ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
+  const h='Wähle einen Speicherslot';
+  ctx.fillText(h, 240-ctx.measureText(h).width/2, 96);
+  for(let n=1; n<=SAVE_SLOTS; n++){
+    const y=118+(n-1)*52;
+    const s=readSlot(n);
+    ctx.fillStyle='#efe3c2'; ctx.fillRect(108,y,264,44);
+    ctx.fillStyle='#c8b189';
+    ctx.fillRect(108,y,264,1); ctx.fillRect(108,y+43,264,1);
+    ctx.fillRect(108,y,1,44); ctx.fillRect(371,y,1,44);
+    ctx.font='bold 9px monospace'; ctx.fillStyle='#3b2f2f';
+    if(s){
+      ctx.fillText('Slot '+n+' – '+(s.playerName||'???'), 116, y+8);
+      ctx.font='8px monospace'; ctx.fillStyle='#7a6a50';
+      const done = s.journal && s.journal.missions && s.journal.missions[0] && s.journal.missions[0].done;
+      ctx.fillText(done ? 'Prototyp durchgespielt' : 'Unterwegs auf dem Campingplatz', 116, y+24);
+      button(262,y+11,56,22,'Laden', ((k)=>()=>loadSlot(k))(n));
+      button(324,y+11,42,22,'Neu',   ((k)=>()=>startNewGame(k))(n));
+    } else {
+      ctx.fillText('Slot '+n+' – leer', 116, y+8);
+      button(262,y+11,104,22,'Neues Spiel', ((k)=>()=>startNewGame(k))(n));
+    }
+  }
 }
 function drawCreation(){
   drawStartBackdrop();
@@ -1872,10 +1918,16 @@ addNPC('harvey','Harvey',120,116,HARVEY_PAL,HARVEY_GRIDS,PORTRAIT_HARVEY,PORTRAI
 addNPC('friend','???',588,468,FRIEND_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
 player.pal=playerPal();
 fitCanvas();
-// Gibt es einen Spielstand? Dann Auswahl anbieten, sonst direkt zur Charaktererstellung.
-const bootSave = readSave();
-if(bootSave){ state.mode='title'; state.pendingSave=bootSave; }
-else showNameInput();
+// Alten Spielstand aus der Vor-Slot-Version einmalig in Slot 1 übernehmen
+try {
+  const legacy = localStorage.getItem('festivalfieber_save');
+  if(legacy){
+    if(!localStorage.getItem(slotKey(1))) localStorage.setItem(slotKey(1), legacy);
+    localStorage.removeItem('festivalfieber_save');
+  }
+} catch(err) {}
+// Das Spiel startet immer mit der Slot-Auswahl
+state.mode='title';
 let last=performance.now();
 function frameLoop(now){
   const dt=Math.min(0.05,(now-last)/1000); last=now;
