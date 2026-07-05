@@ -2,11 +2,11 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Festivalfieber – Akt 1 (Prototyp)</title>
 <style>
-  html,body{margin:0;height:100%;background:#241f2e;overflow:hidden}
-  body{display:flex;align-items:center;justify-content:center}
+  html,body{margin:0;height:100%;background:#241f2e;overflow:hidden;touch-action:none;overscroll-behavior:none}
+  body{display:flex;align-items:center;justify-content:center;height:100dvh}
   #wrap{position:relative}
   canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;touch-action:none}
   .pixinput{position:absolute;display:none;font-family:"Courier New",monospace;font-weight:bold;
@@ -1644,14 +1644,25 @@ function confirmCreation(){
   startGame();
 }
 
-/* --- Canvas an die Fenstergröße anpassen (ganzzahlige Pixel-Skalierung) --- */
+/* --- Canvas an die Fenstergröße anpassen ---
+   Das Seitenverhältnis (3:2) bleibt immer erhalten; der Rest des Bildschirms
+   ist dunkler Rand (Letterboxing über den Seitenhintergrund).
+   Skalierung: ganzzahlig, wenn dabei nicht zu viel Fläche verloren geht
+   (gestochen scharfe Pixel am Laptop) – sonst stufenlos, damit das Spiel
+   auf Handys den Bildschirm bestmöglich füllt. */
+function viewportSize(){
+  const vv = window.visualViewport;
+  return { w: vv ? vv.width : window.innerWidth,
+           h: vv ? vv.height : window.innerHeight };
+}
 function fitCanvas(){
-  SCALE = Math.max(1, Math.floor(Math.min(
-    window.innerWidth  / GAME_W,
-    window.innerHeight / GAME_H
-  )));
-  canvas.style.width  = (GAME_W*SCALE)+'px';
-  canvas.style.height = (GAME_H*SCALE)+'px';
+  const v = viewportSize();
+  const raw = Math.min(v.w/GAME_W, v.h/GAME_H);
+  const i = Math.floor(raw);
+  // Ganzzahlig nur, wenn dadurch höchstens ~15% Fläche verschenkt werden
+  SCALE = (raw>=1 && i/raw>=0.85) ? i : Math.max(0.2, raw);
+  canvas.style.width  = Math.round(GAME_W*SCALE)+'px';
+  canvas.style.height = Math.round(GAME_H*SCALE)+'px';
   if(nameInput.style.display==='block')   placeNameInput();
   if(friendInput.style.display==='block') placeFriendInput();
 }
@@ -1828,6 +1839,14 @@ canvas.addEventListener('click', e=>{
   if(state.dialog) advanceDialog();
 });
 addEventListener('resize', fitCanvas);
+// Rotation des Handys: sofort anpassen und nochmal kurz danach
+// (manche Browser melden direkt nach dem Drehen noch die alte Größe)
+addEventListener('orientationchange', ()=>{ fitCanvas(); setTimeout(fitCanvas, 250); });
+if(window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
+// Pinch-Zoom unterbinden (iOS Safari ignoriert 'user-scalable=no' teilweise)
+document.addEventListener('gesturestart', e=>e.preventDefault());
+// Kontextmenü bei langem Fingerdruck auf dem Spielfeld unterbinden
+canvas.addEventListener('contextmenu', e=>e.preventDefault());
 
 /* ============ TOUCH-STEUERUNG (virtueller Joystick) ============ */
 // Erkennung: Ist das ein Touch-Gerät? Auf dem Laptop mit Maus bleibt alles unsichtbar.
