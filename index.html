@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<title>Festivalfieber – Akt 1 (Prototyp)</title>
+<title>dataluma – Akt 1 (Prototyp)</title>
 <style>
   html,body{margin:0;height:100%;background:#241f2e;overflow:hidden;touch-action:none;overscroll-behavior:none}
   body{display:flex;align-items:center;justify-content:center;height:100dvh}
@@ -22,7 +22,7 @@
 <script>
 "use strict";
 /* =====================================================================
-   FESTIVALFIEBER – Akt 1: Aufbau (Prototyp)
+   DATALUMA – Akt 1: Aufbau (Prototyp)
    Ein Top-Down-Pixel-Adventure. Alles in einer Datei, keine Assets:
    sämtliche Grafik wird im Code erzeugt.
    Aufbau des Codes (Abschnitte):
@@ -56,7 +56,16 @@ const CFG = {
   ASH_CAPACITY: 10,          // Fassungsvermögen Taschenascher
   LITTER_PENALTY: 0.5,       // Sympathie-Abzug bei allen, wenn Stummel auf den Boden fliegt
   BIN_CORRECT_BONUS: 0.5,    // Sympathie-Plus bei allen: Ascher im Restmüll geleert
-  BIN_WRONG_PENALTY: 1       // Sympathie-Minus bei allen: Ascher im Plastikmüll geleert
+  BIN_WRONG_PENALTY: 1,      // Sympathie-Minus bei allen: Ascher im Plastikmüll geleert
+  HIGH_DURATION_SEC: 120,    // Dauer des High-Zustands (2 Minuten echte Spielzeit)
+  HIGH_SPEED_FACTOR: 0.8,    // Bewegungstempo während des Highs (1 = normal)
+  HIGH_TINT_ALPHA: 0.13,     // Stärke des warmen Farbfilters
+  TRIP_DURATION_SEC: 180,    // Dauer des Acid-Trips (3 Minuten echte Spielzeit)
+  TRIP_WAVE_AMP: 3,          // Stärke der Wellen-Verzerrung in Pixeln
+  TRIP_HUE_DEG: 50,          // maximale Farbverschiebung in Grad
+  TRIP_ANIMAL_LIFE: 14,      // wie lange ein Trip-Tier bleibt (Sekunden)
+  BIKE_SPEED_FACTOR: 2.1,    // wie viel schneller man mit dem Rad ist
+  NIGHT_DARK: 0.88           // wie finster die Nacht dort ist, wo kein Licht hinfällt
 };
 
 /* ============ 1. GRUNDGERÜST ============ */
@@ -68,27 +77,46 @@ const nameInput = document.getElementById('nameInput');
 const friendInput = document.getElementById('friendInput');
 let SCALE = 1;
 let camX = 0, camY = 0;
+// Zwischenspeicher fürs Verzerren des Bildes (Acid-Wellen)
+const scratch = document.createElement('canvas');
+scratch.width = GAME_W; scratch.height = GAME_H;
+const sctx = scratch.getContext('2d');
 
 // Der zentrale Spielzustand: alles, was sich im Spiel verändert, lebt hier.
+// Startwerte der Sympathie – auch zum Zurücksetzen beim Laden
+const DEFAULT_SYMPATHY = [
+  { id:'harvey', name:'Harvey', val: 1 },
+  { id:'friend', name:'???',    val: -1 },
+  { id:'momo',   name:'???',    val: -3 },
+  { id:'kip',    name:'???',    val: -2 },
+  { id:'kobi',   name:'???',    val: 0 },
+  { id:'tomas',  name:'???',    val: 0 },
+  { id:'vera',   name:'???',    val: 0 },
+  { id:'rocco',  name:'???',    val: 0 }
+];
 const state = {
   mode: 'create',            // 'title' (Slot-Auswahl), 'create' (Charaktererstellung) oder 'game'
   slot: 1,                   // aktiver Speicherslot (1-3)
   cutscene: false,           // true = Intro läuft, Steuerung gesperrt
   dialog: null,              // aktives Gespräch (oder null)
   menu: null,                // offenes Menü {tab, sel} (oder null)
-  whiteAlpha: 0,             // aktuelle Überblendung (0 = klar, 1 = weiß)
+  whiteAlpha: 0,             // Überblendung nur noch fürs Intro (0 = klar, 1 = weiß)
   whiteTarget: 0,            // Ziel, dem sich whiteAlpha sanft annähert
+  expo: 0,                   // geglättete Helligkeit (folgt exposure() weich nach)
+  scene: 'camp',             // wo bin ich gerade: 'camp', 'tent' oder 'stage'
+  onBike: false,             // sitzt der Spieler auf dem Rad?
+  flashlight: false,         // Taschenlampe an?
+  fade: 0,                   // Schwarzblende beim Rein- und Rausgehen (0..1)
+  fadeDir: 0,                // -1 = aufblenden, +1 = abblenden, 0 = nichts
+  outdoorPos: null,          // wohin der Spieler beim Verlassen zurückkehrt
   time: 0,
+  // Spiel-Uhr: min = Minuten seit Mitternacht, day = Tageszähler (ab 1)
+  clock: { min: 14*60, day: 1 },
   playerName: 'Alex',
   friendName: null,          // wird im Intro gesetzt
   flags: { askedWho:false, askedGlasses:false, introDone:false, lowEnergyWarned:false },
   journal: { missions: [], memories: [] },
-  sympathy: [
-    { id:'harvey', name:'Harvey', val: 1 },
-    { id:'friend', name:'???',    val: -1 },
-    { id:'momo',   name:'???',    val: -3 },
-    { id:'kip',    name:'???',    val: -2 }
-  ],
+  sympathy: DEFAULT_SYMPATHY.map(s=>({...s})),
   energy: 72,
   social: 60,
   inv: [ {id:'tape', n:1}, {id:'apple', n:2}, {id:'muesli', n:1} ],
@@ -96,6 +124,8 @@ const state = {
   ashtray: 0,
   idleSince: 0,
   smoke: { phase:'none', t:0 },   // 'none' | 'rolling' | 'smoking'
+  high: { t:0, dur:0 },           // t = verbleibende Sekunden High, dur = Gesamtdauer
+  trip: { t:0, dur:0, gw:5, glitch:0, glitchHue:0, animalT:8 },  // Acid-Trip inkl. Glitch- und Tier-Timer
   helpTimer: 0
 };
 
@@ -106,6 +136,60 @@ function lerp(a,b,t){ return a+(b-a)*t; }
 function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
 function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function deNum(v){ return (Math.round(v*10)/10).toString().replace('.',','); }
+
+/* --- Spiel-Uhr: SPEED = Spielminuten pro Echtzeit-Sekunde --- */
+const CLOCK = {
+  SPEED: 3,        // Testmodus: 3x schnell (1 = eine Spielminute pro Sekunde)
+  DUSK_START: 19,  // ab hier wird es langsam dunkel
+  DUSK_END:   21,  // ab hier volle Nacht
+  DAWN_START:  5,  // ab hier wird es langsam hell
+  DAWN_END:    7   // ab hier voller Tag
+};
+// Uhr weiterlaufen lassen; bei Mitternacht steigt der Tageszähler
+function clockUpdate(dt){
+  const c = state.clock;
+  c.min += dt * CLOCK.SPEED;
+  while(c.min >= 1440){ c.min -= 1440; c.day++; }
+}
+// Aktuelle Uhrzeit als "21:47"
+function clockText(){
+  const total = Math.floor(state.clock.min + 1e-6);
+  const h = Math.floor(total/60) % 24, m = total % 60;
+  return (h<10?'0':'')+h + ':' + (m<10?'0':'')+m;
+}
+// Wie dunkel ist es gerade? 0 = heller Tag, 1 = tiefste Nacht
+function darkness(){
+  const h = state.clock.min / 60;
+  if(h >= CLOCK.DUSK_END || h < CLOCK.DAWN_START) return 1;             // Nacht
+  if(h >= CLOCK.DUSK_START)                                              // Abenddämmerung
+    return (h - CLOCK.DUSK_START) / (CLOCK.DUSK_END - CLOCK.DUSK_START);
+  if(h < CLOCK.DAWN_END)                                                 // Morgendämmerung
+    return 1 - (h - CLOCK.DAWN_START) / (CLOCK.DAWN_END - CLOCK.DAWN_START);
+  return 0;                                                              // Tag
+}
+
+/* --- Helligkeitsmodell ---
+   Die Umgebung ist tagsüber gleißend hell (+) und nachts dunkel (-).
+   Die Sonnenbrille zieht immer denselben festen Betrag ab.
+   Tags gleicht sie die Blendung genau aus, nachts macht sie es zu dunkel. */
+const GLASSES_TINT = 0.5;   // so viel schluckt die Brille, immer
+function ambientLight(){
+  // Im Zelt kommt nur wenig Licht durch die Plane: tagsüber dämmrig, nachts fast schwarz
+  if(state.scene==='tent') return -0.28 - 0.60 * darkness();
+  return GLASSES_TINT * (1 - darkness()) - CFG.NIGHT_DARK * darkness();
+}
+// Was am Ende auf dem Bildschirm landet: >0 blendet weiß, <0 ist Dunkelheit
+function exposure(){
+  return ambientLight() - (state.wearingGlasses ? GLASSES_TINT : 0);
+}
+// Hellt eine Hex-Farbe auf (f > 0) oder dunkelt sie ab (f < 0), f zwischen -1 und 1
+function shade(hex, f){
+  const n=parseInt(hex.slice(1),16);
+  let r=(n>>16)&255, g=(n>>8)&255, b=n&255;
+  const t = f<0 ? 0 : 255, a = Math.abs(f);
+  r=Math.round(r+(t-r)*a); g=Math.round(g+(t-g)*a); b=Math.round(b+(t-b)*a);
+  return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+}
 
 /* ============ 3. PALETTEN & ERSTELLUNGS-OPTIONEN ============ */
 const SKINS = [
@@ -138,13 +222,46 @@ const FACE_CYCLE = ['down','left','up','right'];
 function playerPal(){
   const s=SKINS[creation.skin], h=HAIRS[creation.hair], o=OUTFITS[creation.outfit];
   return { o:'#4a3a35', h:h.h, d:h.d, s:s.s, S:s.S, e:'#2e2430',
-           c:o.c, k:o.k, p:'#474c66', b:'#6d4a2f' };
+           c:o.c, k:o.k, p:'#474c66', b:'#6d4a2f',
+           // abgeleitete Detail-Töne fürs HD-Sprite (passen sich der Farbwahl an):
+           H:shade(h.h, 0.28),    // Haar-Glanzlicht
+           w:'#f4f0e2',           // Augenweiß
+           m:'#c96a58',           // Mund
+           C:shade(o.c, 0.25),    // Stoff-Highlight (Kragen, Falten)
+           P:shade('#474c66', -0.25), // Hosen-Schatten
+           g:'#e8c35c',           // Gold: Anhänger & Gürtelschnalle
+           B:shade('#6d4a2f', 0.3),   // Schuhglanz
+           q:'#8a5a34', Q:'#6d4426' };  // Rucksack (Rückansicht)
 }
 const HARVEY_PAL = { o:'#4a3a35', t:'#77714a', T:'#5b5636', s:'#eec39a', S:'#d1a06f',
                      e:'#2e2430', f:'#cfc6b8', h:'#cfc6b8', d:'#b7ad9e',
                      c:'#5c7d5a', k:'#48644a', p:'#5d5346', b:'#4f3a28' };
 const FRIEND_PAL = { o:'#4a3a35', h:'#e8c860', d:'#c9a63f', s:'#f8d8b8', S:'#e2b48e',
                      e:'#2e2430', c:'#f2ead8', k:'#ddd2ba', p:'#f2ead8', b:'#b98d5a' };
+const KOBI_PAL = { o:'#4a3a35', h:'#5e8f4e', d:'#44703a', s:'#d29b6c', S:'#b57c4e',
+                   e:'#2e2430', c:'#c9a03f', k:'#a8842f', p:'#5d5346', b:'#6d4a2f' };
+const PORTRAIT_KOBI_PAL = { h:'#5e8f4e', d:'#44703a', s:'#d29b6c', S:'#b57c4e',
+  e:'#2e2430', b:'#44703a', m:'#a8683f', c:'#c9a03f', k:'#a8842f' };
+const TOMAS_PAL = { o:'#4a3a35', h:'#2e2833', d:'#1f1a24', s:'#c98a5a', S:'#a86d42',
+                    e:'#2e2430', c:'#7b5fc9', k:'#5d47a8', p:'#3f4457', b:'#3a2c1e' };
+const PORTRAIT_TOMAS_PAL = { h:'#2e2833', d:'#1f1a24', s:'#c98a5a', S:'#a86d42',
+  e:'#2e2430', b:'#1f1a24', m:'#9c5a3a', c:'#7b5fc9', k:'#5d47a8' };
+const MOMO_PAL = { o:'#4a3a35', h:'#d4487f', d:'#a83462', s:'#e8b48a', S:'#c9906a',
+                   e:'#2e2430', c:'#3f9b93', k:'#2e7a72', p:'#4a4453', b:'#5a4030' };
+const PORTRAIT_MOMO_PAL = { h:'#d4487f', d:'#a83462', s:'#e8b48a', S:'#c9906a',
+  e:'#2e2430', b:'#a83462', m:'#a8546a', c:'#3f9b93', k:'#2e7a72' };
+const VERA_PAL = { o:'#4a3a35', h:'#3f3547', d:'#2a2333', s:'#d8a878', S:'#b8875a',
+                   e:'#2e2430', c:'#2f3b4a', k:'#212a36', p:'#3a3f47', b:'#2a2420' };
+const PORTRAIT_VERA_PAL = { h:'#3f3547', d:'#2a2333', s:'#d8a878', S:'#b8875a',
+  e:'#2e2430', b:'#2a2333', m:'#9c5a3a', c:'#2f3b4a', k:'#212a36' };
+const ROCCO_PAL = { o:'#4a3a35', h:'#2a2420', d:'#1c1815', s:'#8a5f3f', S:'#6d472c',
+                    e:'#2e2430', c:'#22242a', k:'#15171b', p:'#22242a', b:'#15171b' };
+const PORTRAIT_ROCCO_PAL = { h:'#2a2420', d:'#1c1815', s:'#8a5f3f', S:'#6d472c',
+  e:'#2e2430', b:'#1c1815', m:'#7a4530', c:'#22242a', k:'#15171b' };
+const KIP_PAL = { o:'#4a3a35', h:'#e8dcc0', d:'#c2b494', s:'#c98a5a', S:'#a86d42',
+                  e:'#2e2430', c:'#e07a3f', k:'#b85c28', p:'#3f4a5a', b:'#4a3a2a' };
+const PORTRAIT_KIP_PAL = { h:'#e8dcc0', d:'#c2b494', s:'#c98a5a', S:'#a86d42',
+  e:'#2e2430', b:'#c2b494', m:'#9c5a3a', c:'#e07a3f', k:'#b85c28' };
 
 /* ============ 4. PIXEL-SPRITES ============
    Figuren sind kleine "Text-Bilder": jedes Zeichen steht für eine Farbe.
@@ -247,15 +364,154 @@ const HARVEY_SIDE = HARVEY_HEAD_SIDE.concat(BODY_SIDE.slice(8));
 const PLAYER_GRIDS = { down:BODY_DOWN, up:BODY_UP, side:BODY_SIDE };
 const HARVEY_GRIDS = { down:HARVEY_DOWN, up:HARVEY_UP, side:HARVEY_SIDE };
 
-// Zeichnet ein Text-Bild Pixel für Pixel auf den Canvas
-function drawGrid(grid, pal, dx, dy, flip){
+/* --- HD-Sprite der Spielfigur (24x32, gezeichnet mit halber Zellgröße) ---
+   Doppelte Pixeldichte bei gleicher Bildschirmgröße: 26 Körperzeilen plus
+   6 Beinzeilen für die Lauf-Animation. Detail-Töne: H=Haarglanz  w=Augenweiß
+   m=Mund  C=Stoff-Highlight  P=Hosenschatten  g=Gold  q/Q=Rucksack  B=Schuhglanz */
+const HD_DOWN = [
+  "........oooooooo........",
+  "......oohhhhhhhhoo......",
+  ".....ohHHHHHHHHHHho.....",
+  "....ohhHHHHHHHHhhhho....",
+  "....ohhhhhhhhhhhhhho....",
+  "....ohhdhhhhhhhhdhho....",
+  "....ohddssssssssddho....",
+  "....odssssssssssssdo....",
+  "....odssweessweessdo....",
+  "....odsseeSsseeSssdo....",
+  "....odsssssSSsssssdo....",
+  ".....ossssmmmmsssso.....",
+  "......osssssssssso......",
+  "........osssssso........",
+  ".....oCCccccccccCCo.....",
+  "....osCccccccccccCso....",
+  "....oscckkkkkkkkccso....",
+  "....osccccggggccccso....",
+  "....oscCccccccccCcso....",
+  "....oscCcckkkkccCcso....",
+  "....osccccccccccccso....",
+  "....oskkkkkkkkkkkkso....",
+  ".....oPPPPPggPPPPPo.....",
+  ".....oppppppppppppo.....",
+  ".....opPppppppppPpo.....",
+  ".....oppppp..pppppo....."
+];
+const HD_UP = [
+  "........oooooooo........",
+  "......oohhhhhhhhoo......",
+  ".....ohHHHHHHHHHHho.....",
+  "....ohhHHHHHHHHhhhho....",
+  "....ohhhhhhhhhhhhhho....",
+  "....ohhhhhhhhhhhhhho....",
+  "....ohhhhhhhhhhhhhho....",
+  "....ohhddddddddddhho....",
+  "....ohddddddddddddho....",
+  ".....oddddddddddddo.....",
+  "......osssssssssso......",
+  "........osssssso........",
+  "........osssssso........",
+  "........osssssso........",
+  ".....oCCccccccccCCo.....",
+  "....osCckcccccckcCso....",
+  "....osckqqqqqqqqkcso....",
+  "....osckqqqqqqqqkcso....",
+  "....oscqqqqQQqqqqcso....",
+  "....oscqqqQQQQqqqcso....",
+  "....oscqqqqqqqqqqcso....",
+  "....osQQQQQQQQQQQQso....",
+  ".....oPPPPPPPPPPPPo.....",
+  ".....oppppppppppppo.....",
+  ".....opPppppppppPpo.....",
+  ".....oppppp..pppppo....."
+];
+const HD_SIDE = [   // schaut nach links; rechts = gespiegelt
+  "........oooooooo........",
+  "......oohhhhhhhhoo......",
+  ".....ohhhhhHHHHhhho.....",
+  "....ohhhhhhhHHHhhhho....",
+  "....osshhhhhhhhhhhho....",
+  "....ossshhhhhhhhhhho....",
+  "....osweshhhhhhhhhho....",
+  "....osweShhhhhhhhhho....",
+  "....ossssdhhhhhhhhho....",
+  "....osssSdhhhhhhhhho....",
+  "....osmsshhhhhhhhhho....",
+  ".....ossssdhhhhhhho.....",
+  "......osssshhhhhho......",
+  "........osssssso........",
+  ".....oCCcccccccccco.....",
+  "....osccccccccccqqqo....",
+  "....osccccccccckqqqo....",
+  "....osccCcccccckqqqo....",
+  "....osccCcccccckqQqo....",
+  "....osccccccccckqqqo....",
+  "....oskkkkkkkkkkqqqo....",
+  "....osskkkkkkkkQQQQo....",
+  ".....oPPPPPPPPPPPPo.....",
+  ".....oppppppppppppo.....",
+  ".....oppPpppppppppo.....",
+  ".....oppppp..pppppo....."
+];
+// Bein-Zeilen (6 Stück = 3 Bildschirm-Pixel, wie beim einfachen Sprite)
+const LEGS_HD_IDLE = [
+  ".....oppppp..pppppo.....",
+  ".....oppppp..pppppo.....",
+  ".....obbbbb..bbbbbo.....",
+  ".....oBbbbb..bbbbBo.....",
+  "......oooo....oooo......",
+  "........................"
+];
+const LEGS_HD_A = [
+  ".....oppppp..pppppo.....",
+  ".....oppppp..pppppo.....",
+  ".....obbbbb..bbbbbo.....",
+  ".....oBbbbb.............",
+  "......oooo..............",
+  "........................"
+];
+const LEGS_HD_B = [
+  ".....oppppp..pppppo.....",
+  ".....oppppp..pppppo.....",
+  ".....obbbbb..bbbbbo.....",
+  ".............bbbbBo.....",
+  "..............oooo......",
+  "........................"
+];
+const PLAYER_HD_GRIDS = { down:HD_DOWN, up:HD_UP, side:HD_SIDE,
+  cell:0.5, bodyRows:26,
+  legsSet:{ idle:LEGS_HD_IDLE, a:LEGS_HD_A, b:LEGS_HD_B } };
+
+// Kobi im Bad Trip: zusammengekauert, Knie angezogen, Arme drumherum
+const KOBI_CROUCH = [
+  "............",
+  "............",
+  "....oooo....",
+  "..oohhhhoo..",
+  ".ohhhhhhhho.",
+  ".ohhhhhhhho.",
+  ".ohssssssho.",
+  ".ohsessesho.",
+  "..osssssso..",
+  "..occcccco..",
+  ".osccccccso.",
+  ".oscppppcso.",
+  ".oscppppcso.",
+  "..ocppppco..",
+  "..obb..bbo..",
+  "...oo..oo..."
+];
+
+// Zeichnet ein Text-Bild Pixel für Pixel auf den Canvas.
+// cell = Größe einer Zelle in Canvas-Pixeln (0.5 für hochauflösende Sprites)
+function drawGrid(grid, pal, dx, dy, flip, cell){
+  cell = cell || 1;
   for(let r=0; r<grid.length; r++){
     const row = grid[r];
     for(let c=0; c<row.length; c++){
       const col = pal[row[c]];
       if(col){
         ctx.fillStyle = col;
-        ctx.fillRect(dx + (flip ? row.length-1-c : c), dy + r, 1, 1);
+        ctx.fillRect(dx + (flip ? row.length-1-c : c)*cell, dy + r*cell, cell, cell);
       }
     }
   }
@@ -316,7 +572,98 @@ const PORTRAIT_FRIEND_PAL = { h:'#e8c860', d:'#c9a63f', s:'#f8d8b8', S:'#e2b48e'
   e:'#2e2430', b:'#c9a63f', m:'#c96a58', c:'#f2ead8', k:'#ddd2ba' };
 
 /* --- Item-Icons (werden mit einfachen Rechtecken gemalt) --- */
+/* --- Icons für die kleinen Gespräche zwischen NPCs ---
+   Jedes malt auf ein 9x9-Feld ab (x,y = linke obere Ecke). --- */
+const CHAT_ICONS = {
+  pilz(x,y){
+    ctx.fillStyle='#c9402f'; ctx.fillRect(x+1,y+1,7,3); ctx.fillRect(x+2,y,5,1);
+    ctx.fillStyle='#e87a5a'; ctx.fillRect(x+2,y+1,2,1); ctx.fillRect(x+5,y+2,1,1);
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+3,y+4,3,4);
+  },
+  bier(x,y){
+    ctx.fillStyle='#c9a03f'; ctx.fillRect(x+2,y+3,4,5);
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+2,y+1,4,2);
+    ctx.fillStyle='#8a6a2b'; ctx.fillRect(x+6,y+4,1,2);
+  },
+  note(x,y){
+    ctx.fillStyle='#3b2f6f'; ctx.fillRect(x+5,y,1,6);
+    ctx.fillRect(x+5,y,3,1);
+    ctx.fillRect(x+2,y+5,4,3);
+  },
+  zelt(x,y){
+    ctx.fillStyle='#4a8f6a';
+    for(let i=0;i<5;i++) ctx.fillRect(x+4-i, y+3+i, 1+i*2, 1);
+    ctx.fillStyle='#2f5f46'; ctx.fillRect(x+4,y+5,1,3);
+  },
+  sonne(x,y){
+    ctx.fillStyle='#f2c14e'; ctx.fillRect(x+3,y+3,3,3);
+    ctx.fillRect(x+4,y+1,1,1); ctx.fillRect(x+4,y+7,1,1);
+    ctx.fillRect(x+1,y+4,1,1); ctx.fillRect(x+7,y+4,1,1);
+  },
+  regen(x,y){
+    ctx.fillStyle='#8a95a8'; ctx.fillRect(x+1,y+2,7,3); ctx.fillRect(x+2,y+1,4,1);
+    ctx.fillStyle='#5f9bd9'; ctx.fillRect(x+2,y+6,1,2); ctx.fillRect(x+5,y+6,1,2);
+  },
+  joint(x,y){
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+1,y+5,6,2);
+    ctx.fillStyle='#e8944a'; ctx.fillRect(x+7,y+5,1,2);
+    ctx.fillStyle='#b0b0b8'; ctx.fillRect(x+2,y+2,1,2); ctx.fillRect(x+4,y+1,1,3);
+  },
+  hund(x,y){
+    ctx.fillStyle='#8a5a34'; ctx.fillRect(x+2,y+3,5,4);
+    ctx.fillRect(x+1,y+2,2,2); ctx.fillRect(x+6,y+2,2,2);   // Ohren
+    ctx.fillStyle='#241d26'; ctx.fillRect(x+3,y+4,1,1); ctx.fillRect(x+5,y+4,1,1);
+  },
+  // --- Reaktionen ---
+  herz(x,y){
+    ctx.fillStyle='#e0518a';
+    ctx.fillRect(x+1,y+2,3,1); ctx.fillRect(x+5,y+2,3,1);
+    ctx.fillRect(x+1,y+3,7,2); ctx.fillRect(x+2,y+5,5,1);
+    ctx.fillRect(x+3,y+6,3,1); ctx.fillRect(x+4,y+7,1,1);
+  },
+  boese(x,y){
+    ctx.fillStyle='#c9402f'; ctx.fillRect(x+1,y+1,7,7);
+    ctx.fillStyle='#241d26';
+    ctx.fillRect(x+2,y+2,2,1); ctx.fillRect(x+5,y+2,2,1);   // schräge Brauen
+    ctx.fillRect(x+2,y+4,1,1); ctx.fillRect(x+6,y+4,1,1);   // schmale Augen
+    ctx.fillRect(x+3,y+6,3,1); ctx.fillRect(x+2,y+7,1,1); ctx.fillRect(x+6,y+7,1,1); // Mundwinkel runter
+  },
+  lach(x,y){
+    ctx.fillStyle='#f2c14e'; ctx.fillRect(x+1,y+1,7,7);
+    ctx.fillStyle='#241d26';
+    ctx.fillRect(x+2,y+3,1,1); ctx.fillRect(x+6,y+3,1,1);
+    ctx.fillRect(x+2,y+5,5,1); ctx.fillRect(x+3,y+6,3,1);
+  },
+  frage(x,y){
+    ctx.fillStyle='#5f9bd9';
+    ctx.fillRect(x+2,y+1,4,1); ctx.fillRect(x+5,y+2,2,2);
+    ctx.fillRect(x+4,y+4,2,1); ctx.fillRect(x+4,y+5,1,1);
+    ctx.fillRect(x+4,y+7,1,1);
+  },
+  ausruf(x,y){
+    ctx.fillStyle='#e8944a';
+    ctx.fillRect(x+4,y+1,2,4); ctx.fillRect(x+4,y+6,2,2);
+  }
+};
+// Themen, über die geplaudert wird
+const CHAT_TOPICS = ['pilz','bier','note','zelt','sonne','regen','joint','hund'];
+
 const ICONS = {
+  bike(x,y){
+    ctx.strokeStyle='#3b6f8a'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(x+4,y+11,3.5,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x+12,y+11,3.5,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='#c94f6f'; ctx.fillRect(x+4,y+7,8,2); ctx.fillRect(x+7,y+7,2,4);
+    ctx.fillStyle='#241f2e'; ctx.fillRect(x+2,y+5,4,2);
+    ctx.fillStyle='#8d8d95'; ctx.fillRect(x+11,y+4,2,4); ctx.fillRect(x+9,y+4,5,2);
+  },
+  lamp(x,y){
+    ctx.fillStyle='#4a4a58'; ctx.fillRect(x+2,y+6,9,4);       // Griff
+    ctx.fillStyle='#6a6a7a'; ctx.fillRect(x+2,y+7,9,1);
+    ctx.fillStyle='#8d8d95'; ctx.fillRect(x+10,y+4,4,8);      // Kopf
+    ctx.fillStyle='#f2e2a8'; ctx.fillRect(x+13,y+5,2,6);      // Glas
+    ctx.fillStyle='#c9a03f'; ctx.fillRect(x+4,y+7,2,2);       // Schalter
+  },
   glasses(x,y){
     ctx.fillStyle='#241d26';
     ctx.fillRect(x+1,y+6,6,4); ctx.fillRect(x+9,y+6,6,4);   // Gläser
@@ -367,6 +714,9 @@ const MAPW = 44, MAPH = 34;                 // Kartengröße in Kacheln (16px)
 const objects = [];                          // Zelte, Bäume, Klos, Schilder ...
 const solids  = [];                          // unsichtbare Kollisions-Rechtecke
 const stubsOnGround = [];                    // weggeworfene Kippenstummel
+const trail = [];                            // Nachzieheffekt-Positionen während des Highs
+const tripAnimals = [];                      // sprechende Tiere während des Acid-Trips
+const borderWalls = [];                      // Randwände: blockieren nur den Spieler (Wanderer dürfen durch die Ausgänge)
 const particles = [];                        // Rauch, Funken ...
 let ground = null;                           // vorgerenderter Boden
 
@@ -426,7 +776,8 @@ const TENT_COLORS = {
   lila:   {c1:'#9b7fc9', c1b:'#b49ad9', c2:'#77599e'},
   tuerkis:{c1:'#5fb3a8', c1b:'#7fc9bf', c2:'#438a80'},
   gelb:   {c1:'#e6c35c', c1b:'#f0d484', c2:'#bd9b3c'},
-  gruen:  {c1:'#7fb35f', c1b:'#9cc97e', c2:'#5f8f45'}
+  gruen:  {c1:'#7fb35f', c1b:'#9cc97e', c2:'#5f8f45'},
+  pink:   {c1:'#d4709b', c1b:'#e894b5', c2:'#a84f74'}
 };
 function addTent(tx,ty,colors,text,label){
   const x=tx*TILE, y=ty*TILE, w=64, h=44;
@@ -473,18 +824,45 @@ function addHammock(tx,ty){
   solids.push({x:x+58, y:base-6, w:4, h:6});
 }
 
+/* --- Festivallichter: alles, was nachts leuchtet, landet hier --- */
+const lights = [];
+// col = Farbe, r = Radius, s = Stärke (0-1), flicker = Flacker-Stil
+function addLight(x,y,r,col,s,flicker){
+  lights.push({ x, y, r, col, s: s??1, flicker: flicker||'none', seed: Math.random()*100 });
+}
+// Lichterkette zwischen zwei Punkten, abwechselnd bunte Birnen
+const BULB_COLS = ['255,120,90','255,200,90','120,220,140','120,180,255','230,130,235','255,160,60'];
+function addFairyLights(x1,y1,x2,y2,count,sag){
+  for(let i=0;i<=count;i++){
+    const t=i/count;
+    const x=x1+(x2-x1)*t;
+    const y=y1+(y2-y1)*t + Math.sin(t*Math.PI)*(sag??10);
+    addLight(x, y, 26, BULB_COLS[i%BULB_COLS.length], 0.55, 'twinkle');
+  }
+}
+// Laternenmast: Pfosten wird gezeichnet, Licht kommt von oben
+function addLantern(tx,ty,col){
+  const x=tx*TILE+8, base=ty*TILE+16;
+  objects.push({ type:'lantern', x, base, col: col||'255,190,110',
+    label:'Laterne', solid:{x:x-2,y:base-4,w:4,h:4} });
+  addLight(x, base-26, 62, col||'255,190,110', 0.85, 'hum');
+}
+// Bühnenscheinwerfer: großer farbiger Kegel, langsam pulsierend
+function addStageLight(x,y,r,col){ addLight(x,y,r,col,0.7,'sweep'); }
+
 function buildWorld(){
+  lights.length = 0;
   buildGround();
   // Waldrand rundherum
   for(let x=1; x<43; x+=2){ addTree(x,1); addTree(x,32); }
   for(let y=3; y<32; y+=2){ addTree(1,y); addTree(42,y); }
   // Spieler-Camp (Nordwesten)
-  addTent(4,4,  TENT_COLORS.koralle, 'Zzzzz... Aus dem Zelt schnarcht es leise.', 'Zelt');
+  addTent(4,4,  TENT_COLORS.koralle, 'Dein Zelt.', 'Dein Zelt');
   addTent(9,3,  TENT_COLORS.lila,    'Harveys Zelt. Es riecht nach Kaffee und Sonnencreme.', 'Zelt');
   addTent(3,9,  TENT_COLORS.tuerkis, 'Zzzzz... Hier schläft noch jemand tief und fest.', 'Zelt');
   addFire(8,8,false);
   addHammock(11,7);
-  addSign(14,10,'Hauptweg nach Osten. Festivalgelände: noch gesperrt (Aufbau!)');
+  addSign(14,10,'Hauptweg nach Osten. Festivalgelände: nördlich, Tor offen.');
   // Dixi-Klos am Weg
   addToilet(27,13); addToilet(29,13); addToilet(31,13);
   addBin(26,14,'rest');      // Restmüll links der Klos
@@ -496,18 +874,68 @@ function buildWorld(){
   addTent(37,26, TENT_COLORS.gruen, 'Vor dem Zelt liegen Girlanden und Werkzeug verstreut.', 'Zelt');
   addFire(35,29,true);
   addSign(32,27,'Camp "Sonnenblume"');
+  // Camp Süd: Momo und Kip
+  addTent(13,23, TENT_COLORS.pink, 'Ein pinkes Zelt. Davor liegt ein umgekippter Campingstuhl.', 'Zelt');
+  addFire(18,26,true);
+  addChair(17,24);
+  addSign(12,21,'Camp Süd');
+  addToolbox(19,25);
+  addGate(25,3);
+  addBike(7,5);
+  addWoodpile(8,28);
+  addSign(6,26,'Materiallager – Bretter, Gitter, Kabel');
   // verstreute Bäume & Büsche (abseits der Wege)
   [[18,5],[21,18],[16,22],[33,10],[38,7],[8,18],[12,26],[30,20],[36,19],[20,29],[6,22],[40,15]]
     .forEach(p=>addTree(p[0],p[1]));
   [[15,12],[19,10],[23,22],[35,21],[31,29],[10,14],[6,15],[17,27]]
     .forEach(p=>addBush(p[0],p[1]));
+  /* --- Beleuchtung: warm, bunt, gemütlich --- */
+  // Spieler-Camp: Lichterketten über den Zelten (passend zu den Wimpeln)
+  addFairyLights(96,56, 176,42, 9, 12);
+  addFairyLights(60,80, 150,96, 8, 14);
+  addLight(8*TILE+8, 8*TILE+8, 96, '255,150,60', 1.0, 'fire');   // großes Lagerfeuer
+  addLight(11*TILE+8, 7*TILE+6, 40, '255,190,120', 0.5, 'hum');  // Lämpchen an der Hängematte
+  // Laternen entlang der Wege
+  addLantern(14,11,'255,200,120');
+  addLantern(21,13,'180,220,255');
+  addLantern(24,11,'255,190,110');
+  addLantern(33,13,'255,170,200');
+  addLantern(24,20,'190,255,200');
+  addLantern(18,24,'255,200,120');
+  addLantern(29,23,'200,180,255');
+  // Dixi-Klos: kaltes Notlicht
+  addLight(29*TILE+8, 13*TILE+2, 54, '150,230,220', 0.6, 'buzz');
+  // Kobi & Tomás im Nordosten: gemütliche Ecke mit Lichterkette
+  addFairyLights(578,70, 660,64, 7, 10);
+  addLantern(40,7,'255,180,120');
+  addLight(618, 96, 58, '255,170,90', 0.7, 'hum');
+  // Stellas Camp im Südosten: bunt und verspielt
+  addFairyLights(560,378, 640,392, 8, 11);
+  addFairyLights(530,400, 600,440, 7, 13);
+  addLight(35*TILE+8, 29*TILE+8, 74, '255,150,60', 0.9, 'fire');
+  addLight(33*TILE+8, 24*TILE+10, 44, '255,220,120', 0.55, 'hum');
+  addLight(37*TILE+8, 26*TILE+10, 44, '160,255,180', 0.5, 'twinkle');
+  // Festivalgelände im Norden: Bühnenscheinwerfer über den Bäumen
+  addStageLight(300, 40, 150, '255,80,160');
+  addStageLight(420, 30, 140, '90,160,255');
+  addStageLight(500, 46, 150, '150,255,120');
+  addStageLight(240, 34, 140, '255,190,70');
+  // Zelte glimmen von innen
+  for(const o of objects){
+    if(o.type === 'tent') addLight(o.x + o.w/2, o.base - 8, 34, '255,205,130', 0.42, 'hum');
+  }
   // Kollisionen aus den Objekten einsammeln
   for(const o of objects){ if(o.solid) solids.push(o.solid); }
-  // unsichtbare Wände am Kartenrand
-  solids.push({x:0,y:0,w:MAPW*TILE,h:28});
-  solids.push({x:0,y:MAPH*TILE-24,w:MAPW*TILE,h:24});
-  solids.push({x:0,y:0,w:28,h:MAPH*TILE});
-  solids.push({x:MAPW*TILE-28,y:0,w:28,h:MAPH*TILE});
+  // Dein Zelt lässt sich betreten
+  const meins = objects.find(o=>o.type==='tent' && o.label==='Dein Zelt');
+  if(meins) meins.talk = ()=>enterTent();
+  buildTentInterior();
+  // unsichtbare Wände am Kartenrand (nur für den Spieler –
+  // Hintergrund-NPCs verlassen die Karte durch die Ausgänge)
+  borderWalls.push({x:0,y:0,w:MAPW*TILE,h:28});
+  borderWalls.push({x:0,y:MAPH*TILE-24,w:MAPW*TILE,h:24});
+  borderWalls.push({x:0,y:0,w:28,h:MAPH*TILE});
+  borderWalls.push({x:MAPW*TILE-28,y:0,w:28,h:MAPH*TILE});
 }
 
 /* --- Zeichenfunktionen der Objekte --- */
@@ -645,8 +1073,66 @@ function drawBunting(x1,y1,x2,y2){
     }
   }
 }
+// Laternenmast: schlichter Pfosten mit Laternenkopf
+function drawLantern(o){
+  const d = darkness();
+  ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(o.x-4,o.base-2,9,3);
+  ctx.fillStyle='#4a4038'; ctx.fillRect(o.x-1,o.base-26,3,26);      // Mast
+  ctx.fillStyle='#5c5148'; ctx.fillRect(o.x-1,o.base-26,1,26);
+  ctx.fillStyle='#3b332c'; ctx.fillRect(o.x-4,o.base-32,9,3);       // Haube
+  // Glas: leuchtet nachts in der Laternenfarbe
+  const on = d > 0.05;
+  ctx.fillStyle = on ? 'rgba('+o.col+',1)' : '#8a8f96';
+  ctx.fillRect(o.x-3,o.base-30,7,5);
+  if(on){
+    ctx.fillStyle = 'rgba(255,255,255,'+(0.5*d).toFixed(2)+')';
+    ctx.fillRect(o.x-1,o.base-29,3,3);
+  }
+  ctx.fillStyle='#3b332c'; ctx.fillRect(o.x-3,o.base-25,7,1);
+}
+
+// Campingstuhl: steht entweder ordentlich da oder liegt geknickt im Gras
+function addChair(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'chair', x, base, label:'Campingstuhl',
+    ax:x, ay:base, solid:{x:x-8, y:base-8, w:16, h:8},
+    talk:(o)=>chairTalk(o) });
+}
+function drawChair(o){
+  const heil = state.flags.chairFixed;
+  ctx.fillStyle='rgba(40,32,24,0.20)';
+  ctx.fillRect(o.x-9, o.base-3, 18, 4);
+  if(heil){
+    // Wieder aufgebaut: Sitzfläche gespannt, Beine gerade
+    ctx.fillStyle='#3f6f8a'; ctx.fillRect(o.x-8,o.base-16,16,7);      // Sitz
+    ctx.fillStyle='#5290ad'; ctx.fillRect(o.x-7,o.base-15,14,5);
+    ctx.fillStyle='#3f6f8a'; ctx.fillRect(o.x-8,o.base-26,16,9);      // Lehne
+    ctx.fillStyle='#5290ad'; ctx.fillRect(o.x-7,o.base-25,14,7);
+    ctx.fillStyle='#8d8d95';                                          // Gestell
+    ctx.fillRect(o.x-8,o.base-9,2,9); ctx.fillRect(o.x+6,o.base-9,2,9);
+    ctx.fillRect(o.x-8,o.base-26,2,10); ctx.fillRect(o.x+6,o.base-26,2,10);
+    // Panzertape-Streifen als Andenken an die Reparatur
+    ctx.fillStyle='#b0b0b8'; ctx.fillRect(o.x-6,o.base-21,12,3);
+  } else {
+    // Kaputt: eingeknickt, Stoff hängt durch
+    ctx.fillStyle='#8d8d95';
+    ctx.fillRect(o.x-9,o.base-6,11,2);                                // verbogenes Bein
+    ctx.fillRect(o.x+4,o.base-10,2,10);
+    ctx.fillRect(o.x-2,o.base-12,9,2);
+    ctx.fillStyle='#356073'; ctx.fillRect(o.x-7,o.base-11,13,6);      // durchhängender Stoff
+    ctx.fillStyle='#41738a'; ctx.fillRect(o.x-6,o.base-10,11,4);
+    ctx.fillStyle='#2a4d5c'; ctx.fillRect(o.x-5,o.base-8,9,2);        // Riss
+  }
+}
+
 function drawObject(o){
   switch(o.type){
+    case 'chair':   drawChair(o); break;
+    case 'toolbox': drawToolbox(o); break;
+    case 'woodpile': drawWoodpile(o); break;
+    case 'gate':    drawGate(o); break;
+    case 'bike':    drawBike(o); break;
+    case 'lantern': drawLantern(o); break;
     case 'tent':    drawTent(o); break;
     case 'tree':    drawTree(o); break;
     case 'bush':    drawBush(o); break;
@@ -674,11 +1160,27 @@ function rectsOverlap(a,b){
   return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y;
 }
 // Bewegt eine Figur Achse für Achse und stoppt an Hindernissen
+// Welche Hindernisse gelten gerade? Jede Szene hat ihre eigenen.
+function sceneSolids(){
+  if(state.scene==='tent')  return tentSolids.slice();
+  if(state.scene==='stage')
+    return state.flags.backstageOpen ? stageSolids.filter(s=>!s.gate) : stageSolids.slice();
+  return solids.concat(borderWalls);
+}
+
 function moveEntity(e, dx, dy, ignoreNpcs){
-  const blockers = solids.slice();
-  if(!ignoreNpcs){
+  const blockers = sceneSolids();
+  if(!ignoreNpcs && state.scene!=='tent'){
     for(const n of npcs){ if(n!==e) blockers.push(entBox(n)); }
     if(e!==player) blockers.push(entBox(player));
+  }
+  // Im Zelt blockieren zusätzlich Matratze und Rucksack
+  if(state.scene==='tent'){
+    for(const o of tentObjects){ if(o.solid) blockers.push(o.solid); }
+  }
+  // Auf dem Gelände stehen Crew und Security im Weg
+  if(state.scene==='stage' && !ignoreNpcs){
+    for(const n of stageNpcs){ if(n!==e) blockers.push(entBox(n)); }
   }
   e.x += dx;
   let box = entBox(e);
@@ -713,7 +1215,9 @@ function playerUpdate(dt){
     const len=Math.hypot(dx,dy); dx/=len; dy/=len;
     if(dx<0) player.facing='left'; else if(dx>0) player.facing='right';
     else if(dy<0) player.facing='up'; else player.facing='down';
-    let spd = CFG.PLAYER_SPEED * (state.energy<20 ? 0.6 : 1);   // erschöpft = langsam
+    let spd = CFG.PLAYER_SPEED * (state.energy<20 ? 0.6 : 1)
+            * (1 - (1-CFG.HIGH_SPEED_FACTOR)*highFactor())    // High: sanft rein und raus
+            * (state.onBike ? CFG.BIKE_SPEED_FACTOR : 1);     // Rad: deutlich flotter
     moveEntity(player, dx*spd*dt, dy*spd*dt, false);
     player.animT += dt;
     player.frame = Math.floor(player.animT*7)%4;
@@ -730,26 +1234,50 @@ function npcUpdate(dt){
   }
 }
 
-// Zeichnet eine Figur (Spieler oder NPC) inkl. Schatten & Lauf-Animation
+// Zeichnet eine Figur (Spieler oder NPC) inkl. Schatten & Lauf-Animation.
+// Liest Zellgröße, Körperzeilen und Bein-Zeilen aus dem gridSet, damit
+// einfache (12x16) und hochauflösende (24x32) Sprites gleich behandelt werden.
 function drawEntity(e){
+  const gs = e.gridSet;
+  const cell = gs.cell || 1;
+  const bodyRows = gs.bodyRows || 13;
+  const legsSet = gs.legsSet || { idle:LEGS_IDLE, a:LEGS_A, b:LEGS_B };
   let baseGrid, flip=false;
-  if(e.facing==='up') baseGrid=e.gridSet.up;
-  else if(e.facing==='down') baseGrid=e.gridSet.down;
-  else { baseGrid=e.gridSet.side; flip=(e.facing==='right'); }
-  const legs = e.moving ? (e.frame===1?LEGS_A : e.frame===3?LEGS_B : LEGS_IDLE) : LEGS_IDLE;
-  const grid = baseGrid.slice(0,13).concat(legs);
+  if(e.facing==='up') baseGrid=gs.up;
+  else if(e.facing==='down') baseGrid=gs.down;
+  else { baseGrid=gs.side; flip=(e.facing==='right'); }
+  const legs = e.moving ? (e.frame===1?legsSet.a : e.frame===3?legsSet.b : legsSet.idle) : legsSet.idle;
+  const grid = baseGrid.slice(0,bodyRows).concat(legs);
   const bob = (e.moving && (e.frame===1||e.frame===3)) ? -1 : 0;
   const sx = Math.round(e.x-6), sy = Math.round(e.y-16+bob);
   ctx.fillStyle='rgba(50,35,25,0.25)';
   ctx.fillRect(sx+2, Math.round(e.y)-1, 8, 2);
-  drawGrid(grid, e.pal, sx, sy, flip);
+  drawGrid(grid, e.pal, sx, sy, flip, cell);
   return {sx, sy, flip};
 }
+// Unter der Figur mitfahrende Räder, wenn man auf dem Rad sitzt
+function drawBikeUnder(e){
+  if(!state.onBike) return;
+  const y = e.y - 1;
+  const seit = (e.facing==='left'||e.facing==='right');
+  ctx.strokeStyle='#3b6f8a'; ctx.lineWidth=2;
+  if(seit){
+    ctx.beginPath(); ctx.arc(e.x-6,y,5,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(e.x+6,y,5,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='#c94f6f'; ctx.fillRect(e.x-6,y-5,12,2);
+  } else {
+    ctx.beginPath(); ctx.arc(e.x,y,5,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='#c94f6f'; ctx.fillRect(e.x-2,y-6,4,3);
+    ctx.fillStyle='#8d8d95'; ctx.fillRect(e.x-6,y-7,12,2);
+  }
+}
+
 function drawPlayerEnt(){
+  drawBikeUnder(player);
   const pos = drawEntity(player);
-  // Sonnenbrille sitzt auf der Nase
+  // Sonnenbrille sitzt auf der Nase (Augenhöhe des HD-Sprites: ~4 px)
   if(state.wearingGlasses && player.facing!=='up'){
-    const yE = pos.sy+5;
+    const yE = pos.sy+4;
     ctx.fillStyle='#241d26';
     if(player.facing==='down'){
       ctx.fillRect(pos.sx+3,yE,2,2); ctx.fillRect(pos.sx+7,yE,2,2); ctx.fillRect(pos.sx+5,yE,2,1);
@@ -759,17 +1287,550 @@ function drawPlayerEnt(){
       ctx.fillRect(pos.sx+7,yE,3,2);
     }
   }
-  // Zigarette beim Rauchen
+  // Zigarette beim Rauchen (Mundhöhe: ~5 px)
   if(state.smoke.phase==='smoking' && player.facing!=='up'){
     const cx = player.facing==='left' ? pos.sx+1 : pos.sx+8;
-    ctx.fillStyle='#e8e0d0'; ctx.fillRect(cx, pos.sy+7, 3, 1);
-    ctx.fillStyle='#e8944a'; ctx.fillRect(player.facing==='left'?cx:cx+2, pos.sy+7, 1, 1);
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(cx, pos.sy+5, 3, 1);
+    ctx.fillStyle='#e8944a'; ctx.fillRect(player.facing==='left'?cx:cx+2, pos.sy+5, 1, 1);
+  }
+}
+
+// Kobi im Bad Trip: kauert, zittert (1px-Wackeln), Schweißtropfen blinkt
+function drawKobiCrouch(n){
+  const jit = Math.floor(state.time*13)%2;
+  const sx = Math.round(n.x-6)+jit, sy = Math.round(n.y-16);
+  ctx.fillStyle='rgba(50,35,25,0.25)';
+  ctx.fillRect(Math.round(n.x-6)+2, Math.round(n.y)-1, 8, 2);
+  drawGrid(KOBI_CROUCH, n.pal, sx, sy, false);
+  if(Math.floor(state.time*2)%2){ ctx.fillStyle='#8fd0e8'; ctx.fillRect(sx+10, sy+4, 1, 2); }
+}
+// Tomás im Bad Trip: zittert stärker und dreht sich desorientiert im Kreis
+function drawTomasPanic(n){
+  const jit = Math.floor(state.time*17)%2;
+  const fc = FACE_CYCLE[Math.floor(state.time*2.2)%4];
+  drawEntity({ x:n.x+jit-0.5, y:n.y, facing:fc, moving:false, frame:0,
+               pal:n.pal, gridSet:n.gridSet });
+  if(Math.floor(state.time*3)%2){
+    ctx.fillStyle='#8fd0e8';
+    ctx.fillRect(Math.round(n.x)+5, Math.round(n.y)-18, 1, 2);
+    ctx.fillRect(Math.round(n.x)-6, Math.round(n.y)-15, 1, 2);
   }
 }
 
 /* ============ 7. INVENTAR, STATUS, JOURNAL, TOASTS ============ */
+/* ============ DEIN ZELT VON INNEN ============
+   Ein eigener kleiner Schauplatz mit eigener Karte, eigenen Kollisionen
+   und eigenen Gegenständen. Der Raum ist kleiner als der Bildschirm und
+   wird deshalb mittig eingepasst statt von der Kamera verfolgt. */
+const TENT = { W: 190, H: 150 };          // Innenmaße des Zeltraums
+const tentObjects = [];
+const tentSolids  = [];
+
+function buildTentInterior(){
+  tentObjects.length = 0; tentSolids.length = 0;
+  // Wände: der begehbare Boden ist etwas kleiner als der Raum
+  const m = 16;                            // Wandstärke
+  tentSolids.push({x:0, y:0, w:TENT.W, h:m});                   // hinten
+  tentSolids.push({x:0, y:0, w:m, h:TENT.H});                   // links
+  tentSolids.push({x:TENT.W-m, y:0, w:m, h:TENT.H});            // rechts
+  // Vorne bleibt in der Mitte der Ausgang frei
+  tentSolids.push({x:0, y:TENT.H-10, w:70, h:10});
+  tentSolids.push({x:TENT.W-70, y:TENT.H-10, w:70, h:10});
+  // Matratze links hinten
+  tentObjects.push({ type:'mattress', x:30, y:32, w:64, h:46, base:78,
+    ax:62, ay:78, label:'Matratze', solid:{x:30,y:40,w:64,h:34},
+    talk:()=>tentSleep() });
+  // Rucksack rechts
+  tentObjects.push({ type:'backpack', x:132, y:56, w:26, h:28, base:84,
+    ax:145, ay:84, label:'Rucksack', solid:{x:132,y:66,w:26,h:18},
+    talk:()=>{
+      if(!state.flags.lampFound){
+        state.flags.lampFound = true;
+        giveItem('lamp',1);
+        toast('Im Rucksack: deine Taschenlampe! Mit F an und aus.');
+        return;
+      }
+      state.menu={tab:'bag', sel:-1};
+    } });
+  // Ausgang: unsichtbare Zone in der Türöffnung
+  tentObjects.push({ type:'exit', x:80, y:TENT.H-16, w:30, h:16, base:TENT.H,
+    ax:95, ay:TENT.H-4, label:'Ausgang', solid:null,
+    talk:()=>leaveTent() });
+}
+
+// Kollisionen und Gegenstände je nach Schauplatz
+
+
+/* --- Rein und raus, mit kurzer Schwarzblende --- */
+function enterTent(){
+  state.outdoorPos = { x:player.x, y:player.y, facing:player.facing };
+  fadeTo(()=>{
+    state.scene = 'tent';
+    state.onBike = false;                        // vorm Zelt abgestellt
+    player.x = TENT.W/2; player.y = TENT.H-22;   // direkt hinter dem Eingang
+    player.facing = 'up';
+  });
+}
+function leaveTent(){
+  fadeTo(()=>{
+    state.scene = 'camp';
+    const p = state.outdoorPos;
+    if(p){ player.x=p.x; player.y=p.y; player.facing='down'; }
+    state.outdoorPos = null;
+  });
+}
+// Blendet schwarz, führt dann die Aktion aus und blendet wieder auf
+let fadeAction = null;
+function fadeTo(fn){
+  if(state.fadeDir!==0) return;             // läuft schon
+  fadeAction = fn; state.fadeDir = 1;
+}
+function fadeUpdate(dt){
+  if(state.fadeDir === 0) return;
+  state.fade += state.fadeDir * dt * 3.2;
+  if(state.fadeDir > 0 && state.fade >= 1){
+    state.fade = 1;
+    if(fadeAction){ fadeAction(); fadeAction = null; }
+    state.fadeDir = -1;                     // wieder aufblenden
+    state.expo = exposure();                // Helligkeit sofort passend setzen
+  } else if(state.fadeDir < 0 && state.fade <= 0){
+    state.fade = 0; state.fadeDir = 0;
+  }
+}
+
+/* --- Auf der Matratze schlafen: bis zum nächsten Morgen --- */
+function tentSleep(){
+  fadeTo(()=>{
+    const c = state.clock;
+    const ziel = 7*60;                      // 7:00 morgens
+    if(c.min >= ziel) c.day++;              // nach 7: bis morgen früh
+    c.min = ziel;
+    state.energy = clamp(state.energy + 55, 0, 100);
+    state.flashlight = false;               // im Schlaf ausgeschaltet
+    state.expo = exposure();
+    toast('Du schläfst tief und fest. Guten Morgen!');
+  });
+}
+
+/* --- Zeltinneres zeichnen --- */
+function drawTentInterior(){
+  const col = TENT_COLORS.koralle;
+  // Planenwände
+  ctx.fillStyle = col.c2;
+  ctx.fillRect(0,0,TENT.W,TENT.H);
+  // Bodenplane
+  ctx.fillStyle = '#6a5a48'; ctx.fillRect(14,14,TENT.W-28,TENT.H-24);
+  ctx.fillStyle = '#75634f'; ctx.fillRect(16,16,TENT.W-32,TENT.H-28);
+  // Stoffbahnen an den Wänden: senkrechte Streifen
+  ctx.fillStyle = col.c1;
+  for(let x=0;x<TENT.W;x+=12) ctx.fillRect(x,0,6,16);
+  for(let y=0;y<TENT.H;y+=12){ ctx.fillRect(0,y,16,6); ctx.fillRect(TENT.W-16,y,16,6); }
+  // Naht oben, wo die Zeltstangen laufen
+  ctx.fillStyle = col.c1b;
+  ctx.fillRect(0,12,TENT.W,2);
+  ctx.fillRect(12,0,2,TENT.H-10); ctx.fillRect(TENT.W-14,0,2,TENT.H-10);
+  // Eingang: heller Spalt, tagsüber leuchtet Licht herein
+  const d = darkness();
+  ctx.fillStyle = d>0.5 ? '#2a2438' : '#d8c9a0';
+  ctx.fillRect(70,TENT.H-10,50,10);
+  ctx.fillStyle = col.c1;
+  ctx.fillRect(66,TENT.H-12,6,12); ctx.fillRect(118,TENT.H-12,6,12);
+}
+function drawMattress(o){
+  ctx.fillStyle='rgba(30,25,20,0.18)'; ctx.fillRect(o.x+2,o.base-6,o.w-4,5);
+  ctx.fillStyle='#4a6f8a'; ctx.fillRect(o.x,o.y,o.w,o.h);          // Matratze
+  ctx.fillStyle='#5f89a8'; ctx.fillRect(o.x+2,o.y+2,o.w-4,o.h-4);
+  ctx.fillStyle='#4a6f8a';
+  for(let i=1;i<4;i++) ctx.fillRect(o.x+2, o.y+i*11, o.w-4, 2);     // Steppnähte
+  ctx.fillStyle='#e8e0d0'; ctx.fillRect(o.x+6,o.y+4,26,14);         // Kissen
+  ctx.fillStyle='#cfc7b6'; ctx.fillRect(o.x+8,o.y+6,22,10);
+  ctx.fillStyle='#c9704a'; ctx.fillRect(o.x+4,o.y+24,o.w-8,18);     // Schlafsack
+  ctx.fillStyle='#e0865c'; ctx.fillRect(o.x+6,o.y+26,o.w-12,14);
+}
+function drawBackpack(o){
+  ctx.fillStyle='rgba(30,25,20,0.18)'; ctx.fillRect(o.x+2,o.base-4,o.w-4,4);
+  ctx.fillStyle='#4a6a4a'; ctx.fillRect(o.x,o.y+4,o.w,o.h-4);       // Korpus
+  ctx.fillStyle='#5f8558'; ctx.fillRect(o.x+2,o.y+6,o.w-4,o.h-8);
+  ctx.fillStyle='#3b5540'; ctx.fillRect(o.x+4,o.y,o.w-8,6);         // Deckelklappe
+  ctx.fillRect(o.x+3,o.y+14,o.w-6,5);                              // Gurtband
+  ctx.fillStyle='#c9a03f'; ctx.fillRect(o.x+11,o.y+15,4,3);         // Schnalle
+}
+function drawTentObject(o){
+  switch(o.type){
+    case 'mattress': drawMattress(o); break;
+    case 'backpack': drawBackpack(o); break;
+  }
+}
+
+/* ============ DAS FESTIVALGELÄNDE ============
+   Zweiter großer Schauplatz mit eigener Karte: Bühne, Publikumsfläche
+   und der abgesperrte Backstage-Bereich, in den man nur mit Bändchen kommt. */
+const STAGE = { W:40, H:30 };                 // Kartengröße in Kacheln
+const stageObjects = [];
+const stageSolids  = [];
+const stageNpcs    = [];
+const stageLights  = [];
+let stageGround = null;
+
+// Boden des Geländes: festgetretene Wiese, vor der Bühne blanke Erde
+function buildStageGround(){
+  stageGround = document.createElement('canvas');
+  stageGround.width = STAGE.W*TILE; stageGround.height = STAGE.H*TILE;
+  const g = stageGround.getContext('2d');
+  const rnd = mulberry32(4711);
+  for(let ty=0; ty<STAGE.H; ty++){
+    for(let tx=0; tx<STAGE.W; tx++){
+      // Direkt vor der Bühne ist das Gras längst plattgetreten
+      const pit = (ty>=11 && ty<=24 && tx>=8 && tx<=32);
+      g.fillStyle = pit ? '#c2ab7e' : '#a3cf6b';
+      g.fillRect(tx*TILE, ty*TILE, TILE, TILE);
+      for(let i=0;i<5;i++){
+        const px = tx*TILE + Math.floor(rnd()*15);
+        const py = ty*TILE + Math.floor(rnd()*15);
+        if(pit) g.fillStyle = rnd()<0.5 ? '#b09a70' : '#d0ba8e';
+        else    g.fillStyle = rnd()<0.5 ? '#94c15c' : '#b2da7b';
+        g.fillRect(px,py,1,1);
+      }
+      if(pit && rnd()<0.06){            // Müll und Becher im Publikumsbereich
+        const px=tx*TILE+3+Math.floor(rnd()*10), py=ty*TILE+3+Math.floor(rnd()*10);
+        g.fillStyle = rnd()<0.5 ? '#e8e0d0' : '#d9c48a';
+        g.fillRect(px,py,2,2);
+      } else if(!pit && rnd()<0.05){
+        const px=tx*TILE+4+Math.floor(rnd()*8), py=ty*TILE+4+Math.floor(rnd()*8);
+        g.fillStyle='#7fb35f'; g.fillRect(px,py,1,3); g.fillRect(px+2,py+1,1,2);
+      }
+    }
+  }
+}
+
+// Absperrgitter: blockiert und wird als Gitter gezeichnet
+function addFence(tx,ty,len,horizontal,gate){
+  const x=tx*TILE, y=ty*TILE;
+  const w = horizontal ? len*TILE : 6;
+  const h = horizontal ? 6 : len*TILE;
+  stageObjects.push({ type:'fence', x, y, w, h, base:y+h, gate:!!gate });
+  stageSolids.push({ x, y, w, h, gate:!!gate });
+}
+
+function buildStage(){
+  stageObjects.length=0; stageSolids.length=0; stageNpcs.length=0; stageLights.length=0;
+  buildStageGround();
+  const W=STAGE.W*TILE, H=STAGE.H*TILE;
+  // Kartenränder: rundum dicht, nur unten der Weg zurück zum Campingplatz
+  stageSolids.push({x:0, y:0, w:W, h:24});
+  stageSolids.push({x:0, y:0, w:24, h:H});
+  stageSolids.push({x:W-24, y:0, w:24, h:H});
+  stageSolids.push({x:0, y:H-20, w:17*TILE, h:20});
+  stageSolids.push({x:23*TILE, y:H-20, w:W-23*TILE, h:20});
+  // Baumreihen als sichtbarer Rand
+  for(let x=1;x<39;x+=2){ addStageTree(x,1); }
+  for(let y=3;y<29;y+=2){ addStageTree(1,y); addStageTree(38,y); }
+  for(let x=1;x<17;x+=2) addStageTree(x,28);
+  for(let x=23;x<39;x+=2) addStageTree(x,28);
+
+  // --- Die Bühne ---
+  stageObjects.push({ type:'stagePlatform', x:14*TILE, y:3*TILE, w:16*TILE, h:7*TILE,
+    base:10*TILE, ax:22*TILE, ay:10*TILE, label:'Bühne',
+    text:'Die Hauptbühne. Noch steht kein Mensch drauf, aber die Anlage brummt schon.' });
+  stageSolids.push({x:14*TILE, y:3*TILE, w:16*TILE, h:7*TILE});
+  // Boxentürme links und rechts
+  stageObjects.push({ type:'speaker', x:12*TILE, y:5*TILE, w:2*TILE, h:5*TILE, base:10*TILE,
+    ax:13*TILE, ay:10*TILE, label:'Boxenturm', text:'Ein Turm aus Lautsprechern. Man spürt ihn mehr, als man ihn hört.' });
+  stageSolids.push({x:12*TILE, y:5*TILE, w:2*TILE, h:5*TILE});
+  stageObjects.push({ type:'speaker', x:30*TILE, y:5*TILE, w:2*TILE, h:5*TILE, base:10*TILE,
+    ax:31*TILE, ay:10*TILE, label:'Boxenturm', text:'Noch so ein Turm. Der Bass wird später in der Brust sitzen.' });
+  stageSolids.push({x:30*TILE, y:5*TILE, w:2*TILE, h:5*TILE});
+
+  // --- Backstage: eingezäunt, links neben der Bühne ---
+  addFence(3,10,8,true);          // untere Kante
+  addFence(3,2,8,false);          // linke Kante
+  addFence(3,2,5,true);           // obere Kante
+  addFence(10,2,3,false);         // rechte Kante oben
+  addFence(10,7,3,false,false);   // rechte Kante unten
+  // Die Lücke bei y=5..7 ist der Eingang – bewacht und mit Gatter versperrt
+  stageSolids.push({ x:10*TILE, y:5*TILE, w:6, h:2*TILE, gate:true });
+  stageObjects.push({ type:'fence', x:10*TILE, y:5*TILE, w:6, h:2*TILE, base:7*TILE, gate:true });
+  // Backstage-Inventar
+  stageObjects.push({ type:'crate', x:5*TILE, y:4*TILE, w:26, h:20, base:4*TILE+20,
+    ax:5*TILE+13, ay:4*TILE+20, label:'Kiste',
+    text:'Flightcases, Kabeltrommeln, halbleere Wasserkisten. Backstage sieht immer gleich aus.' });
+  stageSolids.push({x:5*TILE, y:4*TILE+8, w:26, h:12});
+  stageObjects.push({ type:'crate', x:7*TILE, y:7*TILE, w:26, h:20, base:7*TILE+20,
+    ax:7*TILE+13, ay:7*TILE+20, label:'Kiste',
+    text:'Auf der Kiste klebt ein Zettel: "NICHT ÖFFNEN – VERA".' });
+  stageSolids.push({x:7*TILE, y:7*TILE+8, w:26, h:12});
+
+  // --- Schilder und der Weg zurück ---
+  addStageSign(18,26,'Zurück zum Campingplatz (Süden)');
+  addStageSign(12,11,'Backstage – nur mit Bändchen');
+
+  // --- Crew ---
+  stageNpcs.push({ id:'vera', name:'Vera', x:22*TILE, y:12*TILE+8, facing:'down',
+    moving:false, animT:0, frame:0, pal:VERA_PAL, gridSet:PLAYER_GRIDS, talk:veraTalk });
+  stageNpcs.push({ id:'rocco', name:'Rocco', x:10*TILE+16, y:6*TILE+8, facing:'left',
+    moving:false, animT:0, frame:0, pal:ROCCO_PAL, gridSet:PLAYER_GRIDS, talk:roccoTalk });
+
+  // --- Licht: Scheinwerfer auf der Bühne, Arbeitslicht backstage ---
+  addStageLightSrc(17*TILE, 4*TILE, 120, '255,80,160', 0.8, 'sweep');
+  addStageLightSrc(22*TILE, 3*TILE, 130, '90,160,255', 0.8, 'sweep');
+  addStageLightSrc(27*TILE, 4*TILE, 120, '150,255,120', 0.8, 'sweep');
+  addStageLightSrc(22*TILE, 9*TILE, 150, '255,190,80', 0.6, 'hum');
+  addStageLightSrc(6*TILE, 6*TILE, 80, '255,225,170', 0.7, 'hum');    // backstage
+  addStageLightSrc(13*TILE, 6*TILE, 54, '255,200,140', 0.6, 'buzz');  // am Eingang
+  addStageLightSrc(19*TILE, 25*TILE, 70, '255,190,110', 0.7, 'hum');  // Weg nach Süden
+}
+function addStageTree(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  stageObjects.push({ type:'tree', x, base, sway:Math.random()*6.28 });
+  stageSolids.push({x:x-5, y:base-6, w:10, h:6});
+}
+function addStageSign(tx,ty,text){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  stageObjects.push({ type:'sign', x, base, text, label:'Schild', ax:x, ay:base });
+  stageSolids.push({x:x-6, y:base-4, w:12, h:4});
+}
+function addStageLightSrc(x,y,r,col,s,flicker){
+  stageLights.push({ x, y, r, col, s, flicker, seed:Math.random()*100 });
+}
+
+/* --- Zwischen Campingplatz und Gelände wechseln --- */
+const CAMP_GATE = { x:25*TILE+8, y:4*TILE+14 };     // direkt unter dem Tor
+function enterStage(){
+  fadeTo(()=>{
+    state.scene = 'stage';
+    player.x = 20*TILE; player.y = STAGE.H*TILE-28;   // unten am Eingang
+    player.facing = 'up';
+    if(!state.flags.stageSeen){
+      state.flags.stageSeen = true;
+      state.journal.memories.push('Das Festivalgelände ist offen. Die Hauptbühne steht.');
+    }
+  });
+}
+function leaveStage(){
+  fadeTo(()=>{
+    state.scene = 'camp';
+    player.x = CAMP_GATE.x; player.y = CAMP_GATE.y + 12;
+    player.facing = 'down';
+  });
+}
+
+/* --- Zeichnen --- */
+function drawFence(o){
+  const gate = o.gate && !state.flags.backstageOpen;
+  ctx.fillStyle = gate ? '#8a5f3a' : '#6a6a78';
+  ctx.fillRect(o.x, o.y, o.w, o.h);
+  ctx.fillStyle = gate ? '#a87a4a' : '#8d8d9c';
+  if(o.w > o.h){
+    ctx.fillRect(o.x, o.y, o.w, 2);
+    for(let x=o.x+3; x<o.x+o.w; x+=8) ctx.fillRect(x, o.y, 2, o.h);
+  } else {
+    ctx.fillRect(o.x, o.y, 2, o.h);
+    for(let y=o.y+3; y<o.y+o.h; y+=8) ctx.fillRect(o.x, y, o.w, 2);
+  }
+}
+function drawStagePlatform(o){
+  // Gerüst und Bühnenboden
+  ctx.fillStyle='rgba(20,16,30,0.28)'; ctx.fillRect(o.x-4, o.base-6, o.w+8, 8);
+  ctx.fillStyle='#3b3547'; ctx.fillRect(o.x, o.y, o.w, o.h);            // Rückwand
+  ctx.fillStyle='#2c2736';
+  for(let x=o.x+6; x<o.x+o.w; x+=14) ctx.fillRect(x, o.y+8, 3, o.h-30); // Traversen
+  ctx.fillStyle='#4a4358'; ctx.fillRect(o.x, o.y, o.w, 10);             // Dachkante
+  ctx.fillStyle='#5c5470'; ctx.fillRect(o.x+2, o.y+2, o.w-4, 4);
+  // Bühnenboden
+  ctx.fillStyle='#6a5340'; ctx.fillRect(o.x+8, o.base-24, o.w-16, 24);
+  ctx.fillStyle='#7d6349'; ctx.fillRect(o.x+10, o.base-22, o.w-20, 20);
+  ctx.fillStyle='#5a4636';
+  for(let x=o.x+12; x<o.x+o.w-12; x+=12) ctx.fillRect(x, o.base-22, 1, 20);
+  // Banner
+  ctx.fillStyle='#c94f6f'; ctx.fillRect(o.x+30, o.y+14, o.w-60, 20);
+  ctx.fillStyle='#e8748f'; ctx.fillRect(o.x+32, o.y+16, o.w-64, 16);
+  ctx.fillStyle='#fdf3dc'; ctx.font='bold 9px monospace'; ctx.textBaseline='top';
+  ctx.fillText('MAIN STAGE', o.x+o.w/2-27, o.y+20);
+  // Scheinwerferleiste
+  ctx.fillStyle='#2c2736'; ctx.fillRect(o.x+6, o.y+8, o.w-12, 5);
+  const d=darkness();
+  for(let i=0;i<6;i++){
+    const lx=o.x+18+i*((o.w-36)/5);
+    ctx.fillStyle = d>0.2 ? ['#ff5aa0','#5aa0ff','#96ff78','#ffbe50','#ff5aa0','#5aa0ff'][i] : '#8d8d9c';
+    ctx.fillRect(lx, o.y+12, 5, 4);
+  }
+}
+function drawSpeaker(o){
+  ctx.fillStyle='rgba(20,16,30,0.25)'; ctx.fillRect(o.x-2, o.base-5, o.w+4, 6);
+  ctx.fillStyle='#241f2e'; ctx.fillRect(o.x, o.y, o.w, o.h);
+  ctx.fillStyle='#3b3547';
+  for(let y=o.y+4; y<o.base-6; y+=16){
+    ctx.fillRect(o.x+2, y, o.w-4, 13);
+    ctx.fillStyle='#15121d';
+    ctx.fillRect(o.x+5, y+3, o.w-10, 7);
+    ctx.fillStyle='#3b3547';
+  }
+}
+function drawCrate(o){
+  ctx.fillStyle='rgba(20,16,30,0.22)'; ctx.fillRect(o.x+1, o.base-3, o.w-2, 4);
+  ctx.fillStyle='#2c2736'; ctx.fillRect(o.x, o.y, o.w, o.h);
+  ctx.fillStyle='#3f3950'; ctx.fillRect(o.x+2, o.y+2, o.w-4, o.h-4);
+  ctx.fillStyle='#8d8d9c';                                   // Eckbeschläge
+  ctx.fillRect(o.x,o.y,4,4); ctx.fillRect(o.x+o.w-4,o.y,4,4);
+  ctx.fillRect(o.x,o.y+o.h-4,4,4); ctx.fillRect(o.x+o.w-4,o.y+o.h-4,4,4);
+  ctx.fillStyle='#c9a03f'; ctx.fillRect(o.x+o.w/2-3, o.y+o.h/2-2, 6, 4);
+}
+function drawStageObject(o){
+  switch(o.type){
+    case 'fence':         drawFence(o); break;
+    case 'stagePlatform': drawStagePlatform(o); break;
+    case 'speaker':       drawSpeaker(o); break;
+    case 'crate':         drawCrate(o); break;
+    case 'tree':          drawTree(o); break;
+    case 'sign':          drawSign(o); break;
+  }
+}
+
+function drawStage(){
+  camX=clamp(Math.round(player.x-GAME_W/2), 0, STAGE.W*TILE-GAME_W);
+  camY=clamp(Math.round(player.y-GAME_H/2-10), 0, STAGE.H*TILE-GAME_H);
+  ctx.save();
+  ctx.translate(-camX,-camY);
+  ctx.drawImage(stageGround,0,0);
+  const list=[];
+  for(const o of stageObjects) list.push({y:o.base, f:()=>drawStageObject(o)});
+  for(const n of stageNpcs)    list.push({y:n.y, f:()=>drawEntity(n)});
+  list.push({y:player.y, f:()=>drawPlayerEnt()});
+  list.sort((a,b)=>a.y-b.y);
+  for(const it of list) it.f();
+  for(const p of particles){
+    ctx.fillStyle=p.col; ctx.fillRect(Math.round(p.x),Math.round(p.y),p.size,p.size);
+  }
+  if(currentCandidate && !state.dialog && !state.menu){
+    const c=currentCandidate;
+    ctx.font='bold 9px monospace'; ctx.textBaseline='top';
+    const w=ctx.measureText('E').width+8;
+    ctx.fillStyle='rgba(30,25,40,0.72)'; ctx.fillRect(c.x-w/2, c.y, w, 12);
+    ctx.fillStyle='#e8c46a'; ctx.fillText('E', c.x-w/2+4, c.y+2);
+  }
+  ctx.restore();
+  drawLighting();
+  drawHUD();
+  drawTouchPad();
+  drawTouchButton();
+  if(state.dialog) drawDialog();
+  if(state.menu) drawMenu();
+  drawToasts();
+  drawFade();
+}
+
+// Veras Werkzeugkiste steht bei Momo im Camp
+function addToolbox(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'toolbox', x, base, label:'Werkzeugkiste',
+    ax:x, ay:base, solid:{x:x-9, y:base-8, w:18, h:8},
+    talk:(o)=>toolsTalk(o) });
+}
+function drawToolbox(o){
+  if(state.flags.toolsTaken){
+    // Nur noch der plattgedrückte Grasabdruck
+    ctx.fillStyle='rgba(90,110,60,0.35)'; ctx.fillRect(o.x-8,o.base-5,16,5);
+    return;
+  }
+  ctx.fillStyle='rgba(40,32,24,0.22)'; ctx.fillRect(o.x-9,o.base-3,18,4);
+  ctx.fillStyle='#a83f3a'; ctx.fillRect(o.x-9,o.base-14,18,14);
+  ctx.fillStyle='#c95a4a'; ctx.fillRect(o.x-8,o.base-13,16,6);
+  ctx.fillStyle='#8a2f2c'; ctx.fillRect(o.x-9,o.base-8,18,2);
+  ctx.fillStyle='#8d8d95'; ctx.fillRect(o.x-3,o.base-18,6,4);      // Griff
+  ctx.fillRect(o.x-2,o.base-16,4,2);
+  ctx.fillStyle='#c9a03f'; ctx.fillRect(o.x-2,o.base-7,4,3);       // Schloss
+}
+// Das Tor zum Festivalgelände
+function addGate(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'gate', x, base, label:'Tor zum Gelände',
+    ax:x, ay:base, solid:null, talk:()=>enterStage() });
+}
+function drawGate(o){
+  ctx.fillStyle='rgba(40,32,24,0.20)'; ctx.fillRect(o.x-22,o.base-3,44,4);
+  ctx.fillStyle='#6a5340';                                          // Pfosten
+  ctx.fillRect(o.x-22,o.base-40,7,40); ctx.fillRect(o.x+15,o.base-40,7,40);
+  ctx.fillStyle='#7d6349'; ctx.fillRect(o.x-22,o.base-40,3,40); ctx.fillRect(o.x+15,o.base-40,3,40);
+  ctx.fillStyle='#3b3547'; ctx.fillRect(o.x-24,o.base-46,48,8);     // Querbalken
+  ctx.fillStyle='#4a4358'; ctx.fillRect(o.x-24,o.base-46,48,3);
+  ctx.fillStyle='#e8c46a'; ctx.font='bold 7px monospace'; ctx.textBaseline='top';
+  ctx.fillText('DATALUMA', o.x-17, o.base-45);
+  // Wimpel am Balken
+  const cols=['#e0518a','#5f9bd9','#7fb35f','#e8c46a'];
+  for(let i=0;i<6;i++){
+    ctx.fillStyle=cols[i%4];
+    ctx.fillRect(o.x-20+i*7, o.base-38, 4, 4);
+  }
+}
+// Das Fahrrad: steht am Camp und macht dich schneller
+function addBike(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'bike', x, base, label:'Fahrrad',
+    ax:x, ay:base, solid:{x:x-10,y:base-6,w:20,h:6},
+    talk:()=>bikeTalk() });
+}
+function drawBike(o){
+  if(state.flags.bikeTaken) return;               // fährt gerade mit dir herum
+  ctx.fillStyle='rgba(40,32,24,0.20)'; ctx.fillRect(o.x-11,o.base-3,22,4);
+  ctx.strokeStyle='#3b6f8a'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(o.x-7,o.base-7,6,0,Math.PI*2); ctx.stroke();   // Räder
+  ctx.beginPath(); ctx.arc(o.x+7,o.base-7,6,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle='#c94f6f';                                               // Rahmen
+  ctx.fillRect(o.x-7,o.base-12,14,2);
+  ctx.fillRect(o.x-2,o.base-12,2,6);
+  ctx.fillStyle='#241f2e'; ctx.fillRect(o.x-9,o.base-15,6,2);            // Sattel
+  ctx.fillStyle='#8d8d95'; ctx.fillRect(o.x+5,o.base-16,2,5);            // Lenker
+  ctx.fillRect(o.x+2,o.base-16,8,2);
+}
+
+// Materiallager im Süden: hier liegen die Bretter für den Bühnenboden
+function addWoodpile(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'woodpile', x, base, label:'Bretterstapel',
+    ax:x, ay:base, solid:{x:x-20, y:base-10, w:40, h:10},
+    talk:()=>woodTalk() });
+}
+function drawWoodpile(o){
+  ctx.fillStyle='rgba(40,32,24,0.22)'; ctx.fillRect(o.x-21,o.base-3,42,4);
+  // Gestapelte Bretter, oben eine Lage quer
+  const lagen = state.flags.woodTaken ? 3 : 6;
+  for(let i=0;i<lagen;i++){
+    const y=o.base-6-i*5;
+    ctx.fillStyle = i%2 ? '#8a6a44' : '#9c7a50';
+    ctx.fillRect(o.x-20, y, 40, 4);
+    ctx.fillStyle = i%2 ? '#a8855a' : '#b89466';
+    ctx.fillRect(o.x-20, y, 40, 1);
+    ctx.fillStyle='#6d5233';
+    for(let k=-16;k<20;k+=9) ctx.fillRect(o.x+k, y, 1, 4);   // Stoßkanten
+  }
+  // Spanngurt
+  ctx.fillStyle='#c9702f'; ctx.fillRect(o.x-6, o.base-6-lagen*5, 3, lagen*5+6);
+}
+
+function woodTalk(){
+  if(!state.flags.woodAsked){
+    startDialog(lin([{ who:'sys', name:'Bretterstapel',
+      text:'Ein Stapel Bühnenbretter. Ordentlich gegurtet. Die gehören dem Festival — einfach mitnehmen wäre keine gute Idee.' }]), {breakable:true});
+    return;
+  }
+  if(state.flags.woodDone){
+    startDialog(lin([{ who:'sys', name:'Bretterstapel',
+      text:'Hier liegt noch genug für die nächsten Schichten.' }]), {breakable:true});
+    return;
+  }
+  if(getItem('wood')){
+    startDialog(lin([{ who:'sys', name:'Bretterstapel',
+      text:'Du trägst schon so viel, wie du tragen kannst. Ab damit zur Mainstage.' }]), {breakable:true});
+    return;
+  }
+  startDialog('woodTake1', {breakable:true});
+}
 const ITEMS = {
   glasses: { name:'Sonnenbrille', desc:'Schützt müde Festival-Augen. Geht gerne mal kaputt.', actions:['wear'] },
+  wood:    { name:'Bretter',      desc:'Ein Armvoll Bühnenbretter. Schwer. Kein Radfahren damit.', actions:[] },
+  band:    { name:'Bändchen',     desc:'Crew-Bändchen fürs Handgelenk. Öffnet den Backstage-Bereich.', actions:[] },
+  tools:   { name:'Werkzeugkiste', desc:'Schwer. Klappert. Gehört Momo.', actions:[] },
+  lamp:    { name:'Taschenlampe',  desc:'Leuchtet dahin, wo du hinschaust. Mit F an und aus.', actions:['toggle'] },
   tape:    { name:'Panzertape',   desc:'Repariert angeblich alles. Angeblich.', actions:['use'] },
   apple:   { name:'Apfel',        desc:'Knackig. +'+CFG.APPLE_ENERGY+' Energie.', actions:['eat'], energy:CFG.APPLE_ENERGY },
   muesli:  { name:'Müsliriegel',  desc:'Haferpower. +'+CFG.MUESLI_ENERGY+' Energie.', actions:['eat'], energy:CFG.MUESLI_ENERGY }
@@ -815,9 +1876,52 @@ function maybeBreakGlasses(){
     if(it){ it.n--; if(it.n<=0) removeItem(it); }
     state.wearingGlasses = false;
     const left = getItem('glasses');
-    state.whiteTarget = left ? 0.32 : 0.5;
-    toast('Knack! Deine Sonnenbrille ist kaputtgegangen.' + (left ? ' Setz im Menü eine neue auf.' : ' Das war die letzte...'));
+    toast('Knack! Deine Sonnenbrille ist kaputtgegangen.' + (left ? ' Mit B setzt du eine neue auf.' : ' Das war die letzte...'));
   }
+}
+
+/* --- Sonnenbrille auf/ab: Taste B, HUD-Knopf und Menü nutzen alle das hier --- */
+function toggleGlasses(){
+  if(state.wearingGlasses){
+    state.wearingGlasses = false;
+    toast(darkness() > 0.4 ? 'Brille ab. Schon besser zu sehen.' : 'Brille ab. Autsch, hell!');
+    return;
+  }
+  if(!getItem('glasses')){ toast('Du hast keine Sonnenbrille dabei.'); return; }
+  state.wearingGlasses = true;
+  toast(darkness() > 0.4 ? 'Brille auf. Nachts... eher so mittel.' : 'Sonnenbrille auf. Ahh, besser.');
+}
+
+/* --- Das Fahrrad: aufsteigen mit R, doppeltes Tempo --- */
+function bikeTalk(){
+  if(!state.flags.bikeTaken){
+    state.flags.bikeTaken = true;
+    state.onBike = true;
+    state.journal.memories.push('Ein herrenloses Fahrrad übernommen.');
+    toast('Fahrrad geschnappt. Mit R auf- und absteigen.');
+    return;
+  }
+  toggleBike();
+}
+function toggleBike(){
+  if(!state.flags.bikeTaken){ toast('Du hast kein Rad.'); return; }
+  if(state.onBike){ state.onBike=false; toast('Abgestiegen.'); return; }
+  if(state.scene==='tent'){ toast('Im Zelt? Eher nicht.'); return; }
+  if(getItem('wood')){ toast('Mit einem Arm voll Bretter? Keine Chance.'); return; }
+  state.onBike = true;
+  toast('Aufgestiegen. Jetzt geht es schneller.');
+}
+
+/* --- Taschenlampe an/aus: Taste F, HUD-Knopf und Menü nutzen alle das hier --- */
+function toggleLamp(){
+  if(state.flashlight){
+    state.flashlight = false;
+    toast('Taschenlampe aus.');
+    return;
+  }
+  if(!getItem('lamp')){ toast('Du hast keine Taschenlampe dabei.'); return; }
+  state.flashlight = true;
+  toast('Taschenlampe an.');
 }
 function doItemAction(item, act){
   const def = ITEMS[item.id];
@@ -827,8 +1931,9 @@ function doItemAction(item, act){
     toast(def.name+' gegessen: +'+def.energy+' Energie');
     if(item.n<=0){ removeItem(item); state.menu.sel = -1; }
   } else if(act==='wear'){
-    if(state.wearingGlasses){ toast('Du trägst schon eine Sonnenbrille.'); }
-    else if(item.n>0){ state.wearingGlasses=true; state.whiteTarget=0; toast('Sonnenbrille aufgesetzt. Ahh, besser.'); }
+    toggleGlasses();
+  } else if(act==='toggle'){
+    toggleLamp();
   } else if(act==='use'){
     toast('Panzertape: Dafür gibt es (noch) keine Verwendung...');
   }
@@ -954,7 +2059,7 @@ DIALOGS.intro1 = { who:'harvey', text:'Hey, dein Gesicht kenne ich doch.', next:
 DIALOGS.intro2 = { who:'player', text:'Es ist sooo hell... Äh.. Hi?', next:'intro3' };
 DIALOGS.intro3 = { who:'harvey', text:'Herrje, wie konnte ich das vergessen! Du Arme(r), ohne Sonnenbrille kann so ein Festival wie dieses wirklich eine Tortur sein. Hier, nimm das.', next:'introItem' };
 DIALOGS.introItem = { who:'sys', name:'', text:'Du hast SONNENBRILLE x10 erhalten!',
-  onEnter(){ giveItem('glasses',10); state.wearingGlasses=true; state.whiteTarget=0; },
+  onEnter(){ giveItem('glasses',10); state.wearingGlasses=true; state.whiteTarget=0; state.expo=exposure(); },
   next:'intro4' };
 DIALOGS.intro4 = { who:'harvey', text:'Besser?', choices:[
   { t:'Ja. Besser.', next:'intro5' },
@@ -1008,15 +2113,977 @@ function harveyTalk(){
 function friendTalk(){
   const m = state.journal.missions.find(m=>m.key==='find');
   if(m && !m.done){
-    startDialog(lin([
-      { who:'friend', text:'Da bist du ja endlich! Ich hab dich gestern ÜBERALL gesucht...' },
-      { who:'friend', text:'Geht es dir gut? Du sahst übel aus. Wir müssen reden. Aber erstmal: schön, dass du da bist.' },
-      { who:'sys', name:'', text(){ return 'Mission abgeschlossen: Finde '+state.friendName+'!'; },
-        onEnter(){ m.done=true; addSympathy('friend',3); } },
-      { who:'sys', name:'', text:'ENDE DES PROTOTYPS. Hier geht Akt 1 später weiter. Du kannst die Karte frei erkunden.' }
-    ]), {breakable:true});
+    startDialog('stellaFound1', {breakable:true});
+    return;
+  }
+  if(!state.flags.veraMet){
+    startDialog(lin([{who:'friend', text:'Geh zur Mainstage. Ehrlich. Je länger du wartest, desto komischer wird es.'}]), {breakable:true});
+    return;
+  }
+  if(state.flags.replacedKnown && !state.flags.woodDone){
+    startDialog(lin([{who:'friend', text: pick([
+      'Support ist auch Arbeit. Mach das Holz, dann sehen wir weiter.',
+      'Ich weiß, das fühlt sich mies an. Aber lauf jetzt nicht weg.',
+      'Vera ist okay. Sie hat sich das nicht ausgesucht.'
+    ])}]), {breakable:true});
+    return;
+  }
+  startDialog(lin([{who:'friend', text: pick([
+    'Wir quatschen später in Ruhe, okay? Ich muss noch unser Camp fertig aufbauen.',
+    'Wie läuft es an der Stage?',
+    'Wenn du eine Pause brauchst: Ich bin hier.'
+  ])}]), {breakable:true});
+}
+
+/* --- Stella: der Übergang in die eigentliche Arbeit --- */
+DIALOGS.stellaFound1 = { who:'friend', text:'Da bist du ja endlich! Ich hab dich gestern ÜBERALL gesucht...', next:'stellaFound2' };
+DIALOGS.stellaFound2 = { who:'friend', text:'Geht es dir gut? Du sahst übel aus.', next:'stellaFound3' };
+DIALOGS.stellaFound3 = { who:'sys', name:'',
+  text(){ return 'Mission abgeschlossen: Finde '+state.friendName+'!'; },
+  onEnter(){
+    const m = state.journal.missions.find(m=>m.key==='find');
+    if(m) m.done = true;
+    addSympathy('friend',3);
+  },
+  next:'stellaBuild1' };
+DIALOGS.stellaBuild1 = { who:'friend', text:'Aber sag mal... weißt du eigentlich, welcher Tag heute ist?', choices:[
+    { t:'Sonntag?',        next:'stellaBuild2' },
+    { t:'Keine Ahnung.',   next:'stellaBuild2' },
+    { t:'Der Aufbau...',   next:'stellaBuild2', fx(){ addSympathy('friend',1); } }
+  ]};
+DIALOGS.stellaBuild2 = { who:'friend', text:'Heute beginnt die heiße Phase vom Buildup. Und du bist Buildup-Lead auf der Mainstage.', next:'stellaBuild3' };
+DIALOGS.stellaBuild3 = { who:'friend', text:'Du solltest seit heute früh da sein.', next:'stellaBuild4' };
+DIALOGS.stellaBuild4 = { who:'player', text:'...oh.', next:'stellaBuild5' };
+DIALOGS.stellaBuild5 = { who:'friend', text:'Geh hin. Der Weg nach Norden, durchs Tor. Und rede mit denen, bevor sie mit dir reden.',
+  onEnter(){
+    if(!state.journal.missions.some(m=>m.key==='stage')){
+      state.journal.missions.push({key:'stage', done:false});
+      state.journal.memories.push('Heute beginnt die heiße Phase des Buildups. Du bist Lead auf der Mainstage.');
+    }
+  },
+  next:null };
+
+/* ============ CAMP SÜD: MOMO & KIP ============
+   Beide kennen dich von letzter Nacht — du dich aber nicht an sie.
+   Kip erzählt dir, was passiert ist. Momo ist sauer, weil ihr Stuhl
+   dabei zu Bruch ging. Mit dem Panzertape lässt sich das kitten. */
+
+DIALOGS.kipFirst1 = { who:'kip', text:'Oh. Du bist es.', next:'kipFirst2' };
+DIALOGS.kipFirst2 = { who:'kip', text:'Na, wieder unter den Lebenden?',
+  onEnter(){ const s=state.sympathy.find(s=>s.id==='kip'); if(s) s.name='Kip'; },
+  choices:[
+    { t:'Kennen wir uns?',      next:'kipWho' },
+    { t:'Sorry wegen gestern.', next:'kipSorry', fx(){ addSympathy('kip',2); } },
+    { t:'Was ist passiert?',    next:'kipStory1' }
+  ]};
+DIALOGS.kipWho = { who:'kip', text:'Ha! Also wirklich nichts mehr. Ich bin Kip. Wir haben uns heute Nacht um drei kennengelernt. Sehr ausführlich sogar.', next:'kipStory1' };
+DIALOGS.kipSorry = { who:'kip', text:'Alter, entspann dich. Ich fand es lustig. Momo weniger.', next:'kipStory1' };
+DIALOGS.kipStory1 = { who:'kip', text:'Also: Du kamst hier reingewankt, mitten in der Nacht. Hast gesungen. Ziemlich laut. Irgendwas mit "Sternen".', next:'kipStory2' };
+DIALOGS.kipStory2 = { who:'kip', text:'Dann wolltest du dich hinsetzen. Bist aber daneben. Beziehungsweise: draufgefallen.', next:'kipStory3' };
+DIALOGS.kipStory3 = { who:'kip', text:'Momos Campingstuhl. Der steht jetzt nicht mehr so richtig.',
+  onEnter(){
+    if(!state.flags.chairKnown){
+      state.flags.chairKnown = true;
+      state.journal.memories.push('Kip erzählt: Du bist nachts auf Momos Campingstuhl gefallen.');
+      state.journal.missions.push({key:'chair', done:false});
+    }
+  },
+  next:'kipStory4' };
+DIALOGS.kipStory4 = { who:'kip', text:'Sie sitzt da drüben und guckt böse. Wenn du das geradebiegen willst: Sie hängt echt an dem Ding.', choices:[
+    { t:'Kann man den reparieren?', next:'kipTip' },
+    { t:'Und du bist mir nicht böse?', next:'kipFine' }
+  ]};
+DIALOGS.kipTip = { who:'kip', text:'Mit genug Panzertape kriegt man auf einem Festival alles wieder hin. Ungelogen.', next:'kipEnd' };
+DIALOGS.kipFine = { who:'kip', text:'Nee. Du hast danach noch eine halbe Stunde mit unserem Kühlschrank geredet. Das war die beste Unterhaltung des Abends.',
+  onEnter(){ addSympathy('kip',1); }, next:'kipEnd' };
+DIALOGS.kipEnd = { who:'kip', text:'Viel Glück da drüben.', next:null };
+
+DIALOGS.momoFirst1 = { who:'momo', text:'Was willst du.',
+  onEnter(){ const s=state.sympathy.find(s=>s.id==='momo'); if(s) s.name='Momo'; },
+  choices:[
+    { t:'Es tut mir leid.',        next:'momoSorry',  fx(){ addSympathy('momo',1); } },
+    { t:'Was habe ich getan?',     next:'momoWhat' },
+    { t:'War doch nur ein Stuhl.', next:'momoWorse',  fx(){ addSympathy('momo',-2); } }
+  ]};
+DIALOGS.momoSorry = { who:'momo', text:'Hm. Wenigstens etwas.', next:'momoChair' };
+DIALOGS.momoWhat = { who:'momo', text:'Du weißt es wirklich nicht mehr, oder? Muss schön sein.', next:'momoChair' };
+DIALOGS.momoWorse = { who:'momo', text:'Der Stuhl war von meinem Vater. Aber klar. Nur ein Stuhl.', next:'momoChair' };
+DIALOGS.momoChair = { who:'momo', text:'Er steht da. Beziehungsweise: er liegt da.',
+  onEnter(){
+    if(!state.flags.chairKnown){
+      state.flags.chairKnown = true;
+      state.journal.memories.push('Momos Campingstuhl ist kaputt. Angeblich deine Schuld.');
+      state.journal.missions.push({key:'chair', done:false});
+    }
+  },
+  next:null };
+
+function kipTalk(){
+  const s = state.sympathy.find(s=>s.id==='kip');
+  if(s && s.name==='???') s.name='Kip';
+  if(!state.flags.kipMet){
+    state.flags.kipMet = true;
+    startDialog('kipFirst1', {breakable:true});
+    return;
+  }
+  if(state.flags.chairFixed){
+    startDialog(lin([{ who:'kip', text: pick([
+      'Momo hat den Stuhl vorhin dreimal auf- und zugeklappt. Sie ist zufrieden.',
+      'Ehrlich? Mit dem Tape sieht der besser aus als vorher.',
+      'Wenn du wieder singen willst: Ich bin dabei. Aber diesmal im Sitzen.'
+    ]) }]), {breakable:true});
+    return;
+  }
+  startDialog(lin([{ who:'kip', text: pick([
+    'Sie guckt immer noch. Ich würde da was tun.',
+    'Panzertape. Im Ernst. Das hält alles.',
+    'Wie viel weißt du eigentlich noch von gestern? Ehrliche Antwort.'
+  ]) }]), {breakable:true});
+}
+
+function momoTalk(){
+  const s = state.sympathy.find(s=>s.id==='momo');
+  if(s && s.name==='???') s.name='Momo';
+  if(!state.flags.momoMet){
+    state.flags.momoMet = true;
+    startDialog('momoFirst1', {breakable:true});
+    return;
+  }
+  if(state.flags.chairFixed){
+    startDialog(lin([{ who:'momo', text: pick([
+      'Der hält wirklich. Ich hätte nicht gedacht, dass du das machst.',
+      'Setz dich ruhig mal drauf. Vorsichtig.',
+      'Mein Vater hätte das Tape übrigens auch genommen. Genau so.'
+    ]) }]), {breakable:true});
+    return;
+  }
+  startDialog(lin([{ who:'momo', text: pick([
+    'Der Stuhl liegt immer noch da.',
+    'Ich rede erst wieder normal mit dir, wenn das Ding steht.',
+    'Nein, ich hab kein Werkzeug. Das ist ein Festival.'
+  ]) }]), {breakable:true});
+}
+
+/* --- Der Stuhl: mit Panzertape lässt er sich retten --- */
+function chairTalk(o){
+  if(state.flags.chairFixed){
+    startDialog(lin([{ who:'sys', name:'Campingstuhl',
+      text:'Steht wieder. Ein breiter Streifen Panzertape hält die Lehne zusammen.' }]), {breakable:true});
+    return;
+  }
+  const tape = getItem('tape');
+  if(!tape){
+    startDialog(lin([{ who:'sys', name:'Campingstuhl',
+      text:'Ein Bein ist verbogen, der Stoff eingerissen. Mit dem richtigen Material wäre das zu retten.' }]), {breakable:true});
+    return;
+  }
+  startDialog('chairFix1', {breakable:true});
+}
+DIALOGS.chairFix1 = { who:'sys', name:'Campingstuhl',
+  text:'Ein Bein ist verbogen, der Stoff eingerissen. Du hast Panzertape dabei.', choices:[
+    { t:'Reparieren',    next:'chairFix2' },
+    { t:'Lieber später', next:null }
+  ]};
+DIALOGS.chairFix2 = { who:'sys', name:'',
+  text:'Du biegst das Bein zurück und klebst den Riss ab. Der Stuhl steht wieder.',
+  onEnter(){
+    state.flags.chairFixed = true;
+    const tape = getItem('tape');
+    if(tape){ tape.n--; if(tape.n<=0) removeItem(tape); }
+    addSympathy('momo',5); addSympathy('kip',1);
+    const m = state.journal.missions.find(m=>m.key==='chair');
+    if(m) m.done = true;
+    state.journal.memories.push('Momos Stuhl mit Panzertape repariert.');
+  },
+  next:'chairFix3' };
+DIALOGS.chairFix3 = { who:'momo', text:'...Du hast das echt gemacht.', next:'chairFix4' };
+DIALOGS.chairFix4 = { who:'momo', text:'Okay. Okay! Dann fangen wir nochmal von vorne an. Ich bin Momo.', next:'chairFix5' };
+DIALOGS.chairFix5 = { who:'momo', text:'Und falls du deine Freundin suchst — die mit den gelben Haaren war heute früh hier und hat nach dir gefragt. Sie ist Richtung Osten.',
+  onEnter(){ state.journal.memories.push('Momo hat deine Freundin heute früh gesehen: Richtung Osten.'); },
+  next:null };
+
+/* ============ CREW: VERA & ROCCO ============
+   Vera baut die Bühne auf und braucht Momos Werkzeug. Wer es ihr bringt,
+   bekommt ein Bändchen — und damit lässt Rocco einen backstage durch. */
+
+DIALOGS.veraFirst1 = { who:'vera', text:'Du bist also da.', next:'veraFirst2' };
+DIALOGS.veraFirst2 = { who:'vera', text:'Vera. Buildup-Lead Mainstage.',
+  onEnter(){ const s=state.sympathy.find(s=>s.id==='vera'); if(s) s.name='Vera'; },
+  next:'veraFirst3' };
+DIALOGS.veraFirst3 = { who:'player', text:'Buildup-Lead Mainstage bin ich.', next:'veraFirst4' };
+DIALOGS.veraFirst4 = { who:'vera', text:'Warst du. Seit heute früh um sechs.', choices:[
+    { t:'Wer hat das entschieden?', next:'veraWho' },
+    { t:'Was ist gestern passiert?', next:'veraWhat' },
+    { t:'Verstehe.',                 next:'veraTask1', fx(){ addSympathy('vera',1); } }
+  ]};
+DIALOGS.veraWho = { who:'vera', text:'Die Produktion. Heute Nacht, intern. Ich war auch nicht dabei, ich wurde nur angerufen.', next:'veraWho2' };
+DIALOGS.veraWho2 = { who:'vera', text:'Es ging schnell. So ist das, wenn der Aufbau in die heiße Phase geht.', next:'veraTask1' };
+DIALOGS.veraWhat = { who:'vera', text:'Das willst du von mir hören? Ich war nicht dabei.', next:'veraWhat2' };
+DIALOGS.veraWhat2 = { who:'vera', text:'Ich weiß nur, dass um vier ein Anruf kam und um sechs ein neuer Name im Plan stand. Meiner.', next:'veraWhat3' };
+DIALOGS.veraWhat3 = { who:'vera', text:'Frag die Leute, die gestern Nacht dabei waren. Ich hab hier eine Stage aufzubauen.', next:'veraTask1' };
+DIALOGS.veraTask1 = { who:'vera', text:'Du bist ab jetzt Support. Meiner.',
+  onEnter(){
+    if(!state.flags.replacedKnown){
+      state.flags.replacedKnown = true;
+      state.journal.memories.push('Vera hat die Buildup-Lead der Mainstage übernommen. Du bist Support.');
+      const m = state.journal.missions.find(m=>m.key==='stage');
+      if(m) m.done = true;
+    }
+  },
+  next:'veraTask2' };
+DIALOGS.veraTask2 = { who:'vera', text:'Und das Erste, was ich brauche, ist Holz. Bretter für den Bühnenboden, hinten ist eine Ecke offen.', next:'veraTask3' };
+DIALOGS.veraTask3 = { who:'vera', text:'Das Material liegt im Lager unten im Süden, hinter den Camps. Hol einen Stapel her.',
+  onEnter(){
+    if(!state.flags.woodAsked){
+      state.flags.woodAsked = true;
+      state.journal.missions.push({key:'wood', done:false});
+      state.journal.memories.push('Erster Auftrag als Support: Bretter aus dem Materiallager holen.');
+    }
+  },
+  next:'veraTask4' };
+DIALOGS.veraTask4 = { who:'vera', text:'Und nimm ein Rad. Der Weg ist weit und wir haben den Tag nicht.', next:null };
+
+DIALOGS.veraWood1 = { who:'vera', text:'Gut. Stell sie da hinten ab.',
+  onEnter(){
+    const it = getItem('wood');
+    if(it){ it.n--; if(it.n<=0) removeItem(it); }
+    state.flags.woodDone = true;
+    addSympathy('vera',3);
+    const m = state.journal.missions.find(m=>m.key==='wood');
+    if(m) m.done = true;
+    state.journal.memories.push('Die ersten Bretter zur Mainstage gebracht.');
+  },
+  next:'veraWood2' };
+DIALOGS.veraWood2 = { who:'vera', text:'Das ging schneller, als ich dachte.', next:'veraWood3' };
+DIALOGS.veraWood3 = { who:'vera', text:'Noch was: Mein Werkzeug steht seit gestern Nacht im Camp Süd bei Momo. Ich komm hier nicht weg.', next:'veraWood4' };
+DIALOGS.veraWood4 = { who:'vera', text:'Bring es mir, dann kriegst du ein Crew-Bändchen. Ohne das lässt Rocco dich nirgends hin.',
+  onEnter(){
+    if(!state.flags.veraAsked){
+      state.flags.veraAsked = true;
+      state.journal.missions.push({key:'tools', done:false});
+      state.journal.memories.push('Vera braucht ihre Werkzeugkiste aus Camp Süd.');
+    }
+  },
+  next:null };
+
+DIALOGS.veraGive1 = { who:'vera', text:'Ist das... ja. Du hast sie wirklich geholt.',
+  onEnter(){
+    const it = getItem('tools');
+    if(it){ it.n--; if(it.n<=0) removeItem(it); }
+    giveItem('band',1);
+    addSympathy('vera',4);
+    state.flags.bandGot = true;
+    const m = state.journal.missions.find(m=>m.key==='tools');
+    if(m) m.done = true;
+    state.journal.memories.push('Von Vera ein Crew-Bändchen bekommen.');
+  },
+  next:'veraGive2' };
+DIALOGS.veraGive2 = { who:'sys', name:'', text:'Du hast BÄNDCHEN erhalten!', next:'veraGive3' };
+DIALOGS.veraGive3 = { who:'vera', text:'Damit bist du offiziell Crew. Support-Crew, aber Crew.', next:'veraGive4' };
+DIALOGS.veraGive4 = { who:'vera', text:'Und ehrlich? Wenn du so weitermachst, redet in drei Tagen keiner mehr über gestern Nacht.', next:null };
+
+function veraTalk(){
+  const s = state.sympathy.find(s=>s.id==='vera');
+  if(s && s.name==='???') s.name='Vera';
+  if(!state.flags.veraMet){
+    state.flags.veraMet = true;
+    startDialog('veraFirst1', {breakable:true});
+    return;
+  }
+  // Holz abliefern
+  if(getItem('wood') && !state.flags.woodDone){
+    startDialog('veraWood1', {breakable:true});
+    return;
+  }
+  // Werkzeug abliefern
+  if(getItem('tools') && !state.flags.bandGot){
+    startDialog('veraGive1', {breakable:true});
+    return;
+  }
+  if(!state.flags.woodDone){
+    startDialog(lin([{ who:'vera', text: pick([
+      'Das Materiallager liegt im Süden, hinter den Camps. Bretter. Ein Stapel reicht erstmal.',
+      'Ich kann hier nicht weg, sonst würde ich selbst fahren.',
+      'Je eher das Holz hier ist, desto eher steht der Bühnenboden.'
+    ]) }]), {breakable:true});
+    return;
+  }
+  if(!state.flags.bandGot){
+    startDialog(lin([{ who:'vera', text: pick([
+      'Camp Süd. Pinkes Zelt. Die Kiste steht daneben.',
+      'Momo weiß Bescheid. Sag einfach, du kommst von mir.',
+      'Ohne Werkzeug komme ich hier keinen Meter weiter.'
+    ]) }]), {breakable:true});
+    return;
+  }
+  startDialog(lin([{ who:'vera', text: pick([
+    'Der Aufbau läuft wieder. Heute Abend wird das hier laut.',
+    'Wenn du backstage gehst: Die Kiste mit meinem Namen bleibt zu.',
+    'Nächste Schicht fängt gleich an. Bleib in der Nähe.'
+  ]) }]), {breakable:true});
+}
+
+DIALOGS.woodTake1 = { who:'sys', name:'Bretterstapel',
+  text:'Bühnenbretter, gegurtet. Einen Arm voll kriegst du.', choices:[
+    { t:'Aufladen',      next:'woodTake2' },
+    { t:'Lieber später', next:null }
+  ]};
+DIALOGS.woodTake2 = { who:'sys', name:'', text:'Du hast BRETTER erhalten! Damit passt du nicht mehr aufs Rad.',
+  onEnter(){
+    state.flags.woodTaken = true;
+    giveItem('wood',1);
+    state.onBike = false;                      // mit vollen Armen fährt niemand
+    state.journal.memories.push('Einen Armvoll Bretter aus dem Materiallager geholt.');
+  },
+  next:null };
+
+DIALOGS.roccoBlock = { who:'rocco', text:'Backstage. Nur mit Bändchen.', choices:[
+    { t:'Ich gehöre dazu.',   next:'roccoNo' },
+    { t:'Alles klar, sorry.', next:null }
+  ]};
+DIALOGS.roccoNo = { who:'rocco', text:'Dann hättest du eins am Handgelenk.', next:null };
+DIALOGS.roccoPass1 = { who:'rocco', text:'Bändchen. Gut.',
+  onEnter(){
+    state.flags.backstageOpen = true;
+    const r = stageNpcs.find(n=>n.id==='rocco');
+    if(r) r.x = 10*TILE - 14;          // tritt zur Seite
+    state.journal.memories.push('Rocco hat den Backstage-Bereich aufgemacht.');
+  },
+  next:'roccoPass2' };
+DIALOGS.roccoPass2 = { who:'rocco', text:'Geh rein. Aber kein Blitzlicht und nichts anfassen.', next:null };
+
+function roccoTalk(){
+  const s = state.sympathy.find(s=>s.id==='rocco');
+  if(s && s.name==='???') s.name='Rocco';
+  if(state.flags.backstageOpen){
+    startDialog(lin([{ who:'rocco', text: pick([
+      'Alles ruhig hier.',
+      'Wenn jemand fragt: Du warst nie drin.',
+      'Vera ist da hinten irgendwo. Oder vorne. Sie ist überall.'
+    ]) }]), {breakable:true});
+    return;
+  }
+  if(getItem('band')){
+    startDialog('roccoPass1', {breakable:true});
+    return;
+  }
+  startDialog('roccoBlock', {breakable:true});
+}
+
+/* --- Momos Werkzeugkiste im Camp Süd --- */
+function toolsTalk(o){
+  if(state.flags.toolsTaken){
+    startDialog(lin([{ who:'sys', name:'Stellplatz', text:'Hier stand Veras Werkzeugkiste.' }]), {breakable:true});
+    return;
+  }
+  if(!state.flags.veraAsked){
+    startDialog(lin([{ who:'sys', name:'Werkzeugkiste',
+      text:'Eine schwere Werkzeugkiste. Nicht deine. Einfach mitnehmen wäre unhöflich.' }]), {breakable:true});
+    return;
+  }
+  startDialog('toolsTake1', {breakable:true});
+}
+DIALOGS.toolsTake1 = { who:'momo',
+  text(){ return state.flags.chairFixed
+    ? 'Die Kiste? Klar, nimm mit. Vera hat schon gefragt.'
+    : 'Die gehört Vera. Nimm sie mit, aber der Stuhl da liegt immer noch.'; },
+  next:'toolsTake2' };
+DIALOGS.toolsTake2 = { who:'sys', name:'', text:'Du hast WERKZEUGKISTE erhalten!',
+  onEnter(){
+    state.flags.toolsTaken = true;
+    giveItem('tools',1);
+    state.journal.memories.push('Veras Werkzeugkiste bei Momo abgeholt.');
+  },
+  next:null };
+
+/* --- Kobi: Chillout-Mission (Phase 1) --- */
+function highFactor(){
+  // 0 = nüchtern, 1 = volles High. Blendet in 2 s ein und über
+  // die letzten 4 s sanft aus – alle Effekte hängen an diesem Wert.
+  if(state.high.t<=0) return 0;
+  const elapsed = state.high.dur - state.high.t;
+  return Math.min(1, elapsed/2, state.high.t/4);
+}
+function startHigh(){
+  state.high.t = CFG.HIGH_DURATION_SEC;
+  state.high.dur = CFG.HIGH_DURATION_SEC;
+  state.flags.kobiJointDone = true;
+  addSympathy('kobi', 1);
+  state.journal.memories.push('Mit Kobi geraucht: warm, weich, alles ganz entspannt.');
+}
+function kobiTalk(){
+  const s = state.sympathy.find(s=>s.id==='kobi');
+  if(s && s.name==='???') s.name='Kobi';           // Name aufdecken
+  if(state.high.t>0){
+    // Während des Highs: entspannte Sprüche
+    startDialog(lin([{ who:'kobi', text: pick([
+      'Siehst du die Wolke da? Sieht aus wie ein Dixi-Klo. Verrückt.',
+      'Alles gut bei dir? Bei mir ist alles guuut.',
+      'Psst... hörst du das? Der Bass vom Soundcheck. Wie ein Herzschlag.',
+      'Bleib ruhig noch ein bisschen sitzen. Die Welt rennt nicht weg.'
+    ]) }]), {breakable:true});
+  } else if(!state.flags.kobiJointDone){
+    startDialog('kobiOffer1', {breakable:true});
+  } else if(!state.flags.kobiCalmed){
+    // Phase 2: Bad Trip – ernster Moment, hier bricht keine Brille
+    state.flags.kobiBadTrip = true;
+    startDialog('btStart', {breakable:false});
   } else {
-    startDialog(lin([{who:'friend', text:'Wir quatschen später in Ruhe, okay? Ich muss noch unser Camp fertig aufbauen.'}]), {breakable:true});
+    startDialog(lin([{ who:'kobi', text: pick([
+      'Hey! Alles wieder klar bei mir. Danke nochmal, wirklich.',
+      'Nächstes Mal: weniger, langsamer, und nur wenn der Kopf schon entspannt ist.',
+      'Wasser? Hab jetzt immer eins dabei. Willst du auch einen Schluck?'
+    ]) }]), {breakable:true});
+  }
+}
+DIALOGS.kobiOffer1 = { who:'kobi',
+  text:'Heeey! Ich bin Kobi. Setz dich, hier oben ist der chilligste Fleck vom ganzen Platz.',
+  next:'kobiOffer2' };
+DIALOGS.kobiOffer2 = { who:'kobi',
+  text:'Ich wollte mir gerade einen Joint anzünden. Willst du mitrauchen?',
+  choices:[
+    { t:'Klar, warum nicht.', next:'kobiSmoke' },
+    { t:'Nee, lieber nicht.', next:'kobiDecline' }
+  ]};
+DIALOGS.kobiSmoke = { who:'sys', name:'',
+  text:'Ihr teilt euch den Joint. Die Anspannung fällt ab... die Farben werden wärmer, alles wird ganz weich.',
+  onEnter(){ startHigh(); }, next:null };
+DIALOGS.kobiDecline = { who:'kobi',
+  text:'Alles gut, kein Stress. Das Angebot steht, falls du es dir anders überlegst.', next:null };
+
+/* --- Kobi: Bad Trip (Phase 2) ---
+   Kobis Angst-Level startet bei 3. Gute Antworten senken es um 1,
+   schlechte (hetzen, laut werden, Trubel) erhöhen es. Bei 0 ist er
+   beruhigt. Die Antwortrunden rotieren, bis es geschafft ist. */
+DIALOGS.btStart = { who:'kobi', bt:true,
+  text:'Da bist du ja... ich glaub, das Zeug haut mich um. Alles ist zu laut, zu grell, zu VIEL... hilf mir, bitte.',
+  onEnter(){ state.kobiFear=3; state.kobiRound=0; },
+  next:'btHub' };
+DIALOGS.btHub = { who:'kobi', bt:true,
+  onEnter(){
+    if(state.kobiFear<=0) return 'btThanks1';
+    state.kobiRound=(state.kobiRound||0)+1;
+  },
+  text(){
+    const f=state.kobiFear;
+    if(f>=4) return 'Alle gucken her!! Die reden über mich, oder?! Sag, dass die nicht über mich reden!!';
+    if(f===3) return 'Mein Herz rast so krass... das ist nicht normal, das ist NICHT normal...';
+    if(f===2) return 'Okay... okay... deine Stimme hilft. Bleib da, ja? Geh nicht weg.';
+    return 'Es wird... ein kleines bisschen besser. Glaub ich. Puh.';
+  },
+  choices: btChoices };
+function btGoodFx(){ state.kobiFear=Math.max(0, state.kobiFear-1); }
+function btBadFx(){ state.kobiFear=Math.min(5, state.kobiFear+1); }
+function btChoices(){
+  const r=(state.kobiRound||1)%3;
+  if(r===1) return [
+    { t:'Ganz ruhig. Ich bin hier. Atme mit mir: ein... und aus...', next:'btGood', fx:btGoodFx },
+    { t:'Reiß dich mal zusammen, ist doch nur Gras!',                next:'btBad',  fx:btBadFx },
+    { t:'Hier, trink einen Schluck Wasser. Ganz langsam.',           next:'btGood', fx:btGoodFx }
+  ];
+  if(r===2) return [
+    { t:'Komm, wir setzen uns dahin, da ist es ruhiger.',                 next:'btGood', fx:btGoodFx },
+    { t:'Das ist nur das Gras. Es geht vorbei, ich versprech es dir.',    next:'btGood', fx:btGoodFx },
+    { t:'HEY!! Schau mich an!! SOFORT!!',                                 next:'btBad',  fx:btBadFx }
+  ];
+  return [
+    { t:'Ich hol schnell ein paar Leute dazu!',                     next:'btBad',  fx:btBadFx },
+    { t:'Erzähl mir von deinem Lieblingssong. Welcher ist es?',     next:'btGood', fx:btGoodFx },
+    { t:'Ich bleib bei dir. So lange du willst.',                   next:'btGood', fx:btGoodFx }
+  ];
+}
+DIALOGS.btGood = { who:'kobi', bt:true,
+  text:'Okay... *atmet zittrig ein*... okay. Danke... genau so, das hilft.',
+  next:'btHub' };
+DIALOGS.btBad = { who:'kobi', bt:true,
+  text:'W-WAS?! Nein nein nein... jetzt ist alles noch VIEL schlimmer!!',
+  next:'btHub' };
+DIALOGS.btThanks1 = { who:'kobi',
+  text:'Es... lässt nach. *lange Ausatmung* Wow. Danke. Ohne dich wär ich komplett abgedreht.',
+  next:'btThanks2' };
+DIALOGS.btThanks2 = { who:'kobi',
+  text:'Das war mir eine Lehre: zu viel, zu schnell, falscher Moment. Merk dir das auch, ja?',
+  next:'btDone' };
+DIALOGS.btDone = { who:'sys', name:'',
+  text:'Kobi hat sich beruhigt! +2 Sympathie bei Kobi. Neue Erinnerungen im Journal.',
+  onEnter(){
+    state.flags.kobiCalmed=true;
+    addSympathy('kobi', 2);
+    state.journal.memories.push('Kobi durch einen Bad Trip begleitet: Ruhe, Wasser, ein ruhiger Ort – und einfach dableiben.');
+    state.journal.memories.push('Cannabis-Risiken erlebt: Paranoia, Angstzustände, Überforderung, Gedächtnislücken. Kann jeden treffen, nicht nur Anfänger.');
+  },
+  next:null };
+
+/* --- Tomás: Acid-Mission (Phase 1) --- */
+function tripFactor(){
+  // Wie highFactor, aber: 3 s Einblendung, 6 s Ausblendung
+  if(state.trip.t<=0) return 0;
+  const elapsed = state.trip.dur - state.trip.t;
+  return Math.min(1, elapsed/3, state.trip.t/6);
+}
+function startTrip(){
+  state.trip.t = CFG.TRIP_DURATION_SEC;
+  state.trip.dur = CFG.TRIP_DURATION_SEC;
+  state.trip.animalT = 8;                  // erstes Tier nach ~8 s
+  state.flags.tomasTripDone = true;
+  addSympathy('tomas', 1);
+  state.journal.memories.push('Mit Tomás getrippt: Farben, die atmen, und Gedanken, die Türen öffnen.');
+}
+function tomasTalk(){
+  const s = state.sympathy.find(s=>s.id==='tomas');
+  if(s && s.name==='???') s.name='Tomás';
+  if(state.trip.t>0){
+    startDialog(lin([{ who:'tomas', text: pick([
+      'Schau dir die Bäume an... die atmen mit uns. Haben sie schon immer, wir hören nur nie zu.',
+      'Zeit ist auch nur ein Zaun, den jemand in die Wiese gestellt hat.',
+      'Ich hab gerade meiner Hand zugeschaut. Zwanzig Minuten. Beste Doku ever.',
+      'Alles hängt zusammen. Du, ich, der Bass, das Gras. Ein einziges großes Lied.'
+    ]) }]), {breakable:false});
+  } else if(!state.flags.tomasTripDone){
+    startDialog('tomasOffer1', {breakable:true});
+  } else if(!state.flags.tomasGrounded){
+    // Phase 2: Bad Trip – ernster Moment, keine Brillen-Comedy
+    state.flags.tomasBadTrip = true;
+    startDialog('t2Start', {breakable:false});
+  } else {
+    startDialog(lin([{ who:'tomas', text: pick([
+      'Puh... zurück auf dem Teppich. Danke, dass du geblieben bist.',
+      'Nächstes Mal reise ich mit Sitzplatzreservierung: guter Ort, gute Leute, guter Kopf.',
+      'Die Tiere haben mit dir geredet, sagst du? ...Interessant. Sehr interessant.'
+    ]) }]), {breakable:true});
+  }
+}
+DIALOGS.tomasOffer1 = { who:'tomas',
+  text:'Hola! Tomás. Kobi und ich halten hier oben die Stellung: er raucht, ich reise. Nur eben ohne Koffer.',
+  next:'tomasOffer2' };
+DIALOGS.tomasOffer2 = { who:'tomas',
+  text:'Ich hab zwei Pappen dabei. Farben, Muster, große Gedanken... Willst du mitreisen?',
+  choices:[
+    { t:'Okay... ich bin dabei.', next:'tomasTrip' },
+    { t:'Das ist mir eine Nummer zu groß.', next:'tomasDecline' }
+  ]};
+DIALOGS.tomasTrip = { who:'sys', name:'',
+  text:'Ihr legt euch ins Gras. Erst passiert nichts... dann beginnen die Farben zu atmen.',
+  onEnter(){ startTrip(); }, next:null };
+DIALOGS.tomasDecline = { who:'tomas',
+  text:'Respekt – das ist die klügere Antwort von uns beiden. Falls doch: Du weißt, wo ich liege.', next:null };
+
+/* --- Tomás: Bad Trip (Phase 2) ---
+   Wie bei Kobi, aber mit Panik-Level und wirren, loopenden Sätzen.
+   Gut: langsam sprechen, erden, an Vertrautes erinnern, 'es geht vorbei'.
+   Schlecht: hetzen, anschreien, Druck machen. */
+DIALOGS.t2Start = { who:'tomas', bt2:true,
+  text:'Du... du bist echt, oder? Die Wiese hat vorhin geatmet und jetzt atmet sie FALSCH herum. Ich finde den Ausgang aus meinem Kopf nicht mehr. Ich finde ihn nicht. Ich finde ihn nicht.',
+  onEnter(){ state.tomasPanic=3; state.tomasRound=0; },
+  next:'t2Hub' };
+DIALOGS.t2Hub = { who:'tomas', bt2:true,
+  onEnter(){
+    if(state.tomasPanic<=0) return 't2Thanks1';
+    state.tomasRound=(state.tomasRound||0)+1;
+  },
+  text(){
+    const p=state.tomasPanic;
+    if(p>=4) return 'Der Boden ist nicht echt der Boden ist nicht echt der Boden– wo sind meine Hände?! WO SIND MEINE HÄNDE?!';
+    if(p===3) return 'Ich komm hier nicht mehr raus. Ich komm hier nie mehr raus. Ich komm hier– ich komm hier nicht–';
+    if(p===2) return 'Deine Stimme... die ist echt, oder? Die ist echt. Okay. Echt. Okay. Sag noch was.';
+    return 'Es wird... leiser im Kopf. Bleib genau da. Genau... da.';
+  },
+  choices: t2Choices };
+function t2GoodFx(){ state.tomasPanic=Math.max(0, state.tomasPanic-1); }
+function t2BadFx(){ state.tomasPanic=Math.min(5, state.tomasPanic+1); }
+function t2Choices(){
+  const r=(state.tomasRound||1)%3;
+  if(r===1) return [
+    { t:'Ganz langsam. Hör auf meine Stimme, Wort für Wort. Du bist sicher.',            next:'t2Good', fx:t2GoodFx },
+    { t:'Steh auf! Beweg dich, lauf es dir ab!',                                          next:'t2Bad',  fx:t2BadFx },
+    { t:'Schau: Da liegt Kobi, da ist euer Platz. Alles ist da, wo es hingehört.',        next:'t2Good', fx:t2GoodFx }
+  ];
+  if(r===2) return [
+    { t:'Das ist die Pappe. Sie wirkt – und sie hört wieder auf. Das ist schon unterwegs.', next:'t2Good', fx:t2GoodFx },
+    { t:'Fühl mal das Gras unter deinen Händen. Nur das Gras. Sonst nichts.',               next:'t2Good', fx:t2GoodFx },
+    { t:'JETZT KOMM MAL KLAR!!',                                                            next:'t2Bad',  fx:t2BadFx }
+  ];
+  return [
+    { t:'Reiß dich zusammen, du machst ja allen Angst!',                                  next:'t2Bad',  fx:t2BadFx },
+    { t:'Weißt du noch? Die Wolke, die wie ein Dixi-Klo aussah. Die ist immer noch oben.', next:'t2Good', fx:t2GoodFx },
+    { t:'Ich zähle mit dir: vier Sekunden ein, vier aus. Ich mach es vor.',               next:'t2Good', fx:t2GoodFx }
+  ];
+}
+DIALOGS.t2Good = { who:'tomas', bt2:true,
+  text:'Okay... okay... *hält sich an deiner Stimme fest*... weiter. Bitte weiter genau so.',
+  next:'t2Hub' };
+DIALOGS.t2Bad = { who:'tomas', bt2:true,
+  text:'NEIN nein nein, nicht so laut, nicht so schnell– jetzt dreht sich ALLES wieder!!',
+  next:'t2Hub' };
+DIALOGS.t2Thanks1 = { who:'tomas',
+  text:'*atmet* ... Die Wiese atmet wieder richtig herum. Du hast mich zurückgeholt. Danke. Wirklich.',
+  next:'t2Thanks2' };
+DIALOGS.t2Thanks2 = { who:'tomas',
+  text:'Das Zeug öffnet Türen, ja. Aber manchmal knallt eine hinter dir zu. Set und Setting, Freund(in). Immer.',
+  next:'t2Done' };
+DIALOGS.t2Done = { who:'sys', name:'',
+  text:'Tomás hat wieder Boden unter den Füßen! +2 Sympathie bei Tomás. Neue Erinnerungen im Journal.',
+  onEnter(){
+    state.flags.tomasGrounded=true;
+    addSympathy('tomas', 2);
+    state.journal.memories.push('Tomás aus einem Bad Trip geholt: langsam sprechen, erden, an Vertrautes erinnern – und daran, dass es vorbeigeht.');
+    state.journal.memories.push('LSD-Risiken erlebt: sensorische Überlastung, Angst, Realitätsverlust, Kontrollverlust, emotionale Achterbahn. Set und Setting entscheiden mit.');
+  },
+  next:null };
+
+/* --- Trip-Tiere: rein atmosphärisch, sagen surreale Zeilen und verschwinden --- */
+const ANIMAL_KINDS = [
+  { kind:'eichhoernchen', label:'Eichhörnchen', lines:[
+    'Ich vergrabe Nüsse und vergesse sie. Der Wald wächst aus meinen vergessenen Plänen. Woraus wächst deiner?',
+    'Du rennst viel. Aber wohin rennt eigentlich das Rennen?',
+    'Psst. Der Baum erinnert sich an jeden, der sich je an ihn gelehnt hat.'
+  ]},
+  { kind:'vogel', label:'Vogel', lines:[
+    'Von oben sind alle Wege nur Kritzeleien. Ihr nehmt sie so ernst.',
+    'Ich singe nicht, weil ich eine Antwort weiß. Ich singe, weil die Frage schön ist.',
+    'Der Himmel gehört niemandem. Deshalb passt er auf alle auf.'
+  ]},
+  { kind:'fuchs', label:'Fuchs', lines:[
+    'Du suchst eine Erinnerung? Vielleicht ruht sie sich nur in dir aus.',
+    'Ich bin nicht wirklich hier. Aber wer von uns beiden ist das schon?',
+    'Leise sein ist auch eine Sprache. Die meisten hören ihr nur nie zu.'
+  ]}
+];
+function spawnTripAnimal(){
+  const def=pick(ANIMAL_KINDS);
+  for(let tries=0; tries<8; tries++){        // freien Fleck in Spielernähe suchen
+    const x=player.x+(Math.random()*120-60), y=player.y+(Math.random()*80-40);
+    if(x<40||y<40||x>MAPW*TILE-40||y>MAPH*TILE-40) continue;
+    if(solids.some(s=>rectsOverlap({x:x-5,y:y-6,w:10,h:6},s))) continue;
+    tripAnimals.push({ kind:def.kind, label:def.label, lines:def.lines,
+      x, y, seed:Math.random()*10, age:0, life:CFG.TRIP_ANIMAL_LIFE });
+    return;
+  }
+}
+function tripAnimalsUpdate(dt){
+  if(state.trip.t>0){
+    state.trip.animalT -= dt;
+    if(state.trip.animalT<=0 && tripFactor()>0.5 && tripAnimals.length<3){
+      state.trip.animalT = 15+Math.random()*10;
+      spawnTripAnimal();
+    }
+  }
+  for(const a of tripAnimals){ a.age+=dt; a.life-=dt; }
+  for(let i=tripAnimals.length-1;i>=0;i--){
+    if(tripAnimals[i].life<=0 || state.trip.t<=0){
+      const a=tripAnimals[i];                // Abgang mit kleinem Funkel-Plopp
+      for(let k=0;k<5;k++) particles.push({x:a.x, y:a.y-5, vx:(Math.random()-0.5)*20,
+        vy:-Math.random()*14, life:0.5, col:'rgba(255,220,160,0.8)', size:1});
+      tripAnimals.splice(i,1);
+    }
+  }
+}
+function animalTalk(a){
+  startDialog(lin([{ who:'sys', name:a.label, text:pick(a.lines) }]), {breakable:false});
+}
+// Zeichnet die drei Tierarten als kleine Rect-Bilder, mit weichem Ein-/Ausblenden
+function drawAnimal(a){
+  const fade=Math.min(1, a.age/0.6, a.life/0.6);
+  ctx.globalAlpha=fade;
+  ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(Math.round(a.x)-4,Math.round(a.y)-1,8,2);
+  const x=Math.round(a.x), y=Math.round(a.y);
+  if(a.kind==='eichhoernchen'){
+    ctx.fillStyle='#a35a2f';
+    ctx.fillRect(x-4,y-5,6,5);                               // Körper
+    ctx.fillRect(x+1,y-7,4,4);                               // Kopf
+    ctx.fillStyle='#7a3f1e';
+    ctx.fillRect(x-6,y-9,3,6); ctx.fillRect(x-5,y-11,3,4);   // buschiger Schwanz
+    ctx.fillRect(x+2,y-8,1,2);                               // Ohr
+    ctx.fillStyle='#e8d9b5'; ctx.fillRect(x-3,y-3,3,2);      // heller Bauch
+    ctx.fillStyle='#2e2430'; ctx.fillRect(x+3,y-6,1,1);      // Auge
+  } else if(a.kind==='vogel'){
+    const by=y+Math.round(Math.sin(state.time*3+a.seed)*1.5)-2;   // hüpft leicht
+    ctx.fillStyle='#4f8fbf';
+    ctx.fillRect(x-3,by-4,6,4);                              // Körper
+    ctx.fillRect(x+2,by-6,3,3);                              // Kopf
+    ctx.fillStyle='#3a6f99'; ctx.fillRect(x-4,by-3,3,2);     // Flügel
+    ctx.fillStyle='#e8944a'; ctx.fillRect(x+5,by-5,2,1);     // Schnabel
+    ctx.fillStyle='#2e2430'; ctx.fillRect(x+3,by-5,1,1);     // Auge
+    ctx.fillStyle='#5d5346'; ctx.fillRect(x-1,by,1,2); ctx.fillRect(x+1,by,1,2);  // Beine
+  } else {
+    ctx.fillStyle='#c9602f';
+    ctx.fillRect(x-5,y-5,8,5);                               // Körper
+    ctx.fillRect(x+2,y-7,4,4);                               // Kopf
+    ctx.fillRect(x+3,y-9,1,2); ctx.fillRect(x+5,y-9,1,2);    // Ohren
+    ctx.fillRect(x-7,y-5,3,3);                               // Schwanz
+    ctx.fillStyle='#e8e0d0';
+    ctx.fillRect(x-8,y-4,3,2);                               // weiße Schwanzspitze
+    ctx.fillRect(x+4,y-4,2,1);                               // Schnauze
+    ctx.fillStyle='#2e2430'; ctx.fillRect(x+4,y-6,1,1);      // Auge
+  }
+  ctx.globalAlpha=1;
+}
+
+/* --- Ausgänge & Wanderer (Hintergrund-NPCs) ---
+   Drei Ausgänge (Baumlücken) am Kartenrand. Jeder Wanderer kommt aus
+   einem Ausgang und läuft direkt zu einem ANDEREN – über 1–2 leicht
+   versetzte Zwischenpunkte, damit nicht alle dieselbe Linie laufen.
+   Der Bestand wird konstant bei WANDERER_MIN gehalten. */
+const EXITS = [
+  { id:'nord',    x:328, y: 22 },   // oben
+  { id:'sued',    x:232, y:538 },   // unten
+  { id:'suedost', x:648, y:538 }    // unten rechts, nahe Stellas Camp
+];
+const WANDERER_MIN = 10;
+const wanderers = [];
+let wandererRespawnT = 0;
+
+// Würfelt ein Aussehen aus den Erstellungs-Paletten zusammen
+function randomWandererPal(){
+  const s=pick(SKINS), h=pick(HAIRS), o=pick(OUTFITS);
+  return { o:'#4a3a35', h:h.h, d:h.d, s:s.s, S:s.S, e:'#2e2430',
+           c:o.c, k:o.k, p:pick(['#474c66','#5d5346','#3f4457','#6d4a2f']), b:'#6d4a2f' };
+}
+// Sucht einen freien Fleck in der Nähe eines Punkts
+function freeSpotNear(x,y){
+  for(let tries=0; tries<8; tries++){
+    const px=x+(Math.random()*40-20), py=y+(Math.random()*40-20);
+    if(px<40||py<40||px>MAPW*TILE-40||py>MAPH*TILE-40) continue;
+    if(solids.some(s=>rectsOverlap({x:px-5,y:py-7,w:10,h:7},s))) continue;
+    return {x:px,y:py};
+  }
+  return null;
+}
+// Baut die Route: 1–2 seitlich versetzte Zwischenpunkte, dann der Ziel-Ausgang
+function buildRoute(entry,dest){
+  const route=[];
+  const n=1+Math.floor(Math.random()*2);
+  const dx=dest.x-entry.x, dy=dest.y-entry.y, len=Math.hypot(dx,dy)||1;
+  for(let k=1;k<=n;k++){
+    const t=k/(n+1);
+    const off=Math.random()*160-80;                        // quer zur Laufrichtung
+    const p=freeSpotNear(lerp(entry.x,dest.x,t)-dy/len*off,
+                         lerp(entry.y,dest.y,t)+dx/len*off);
+    if(p) route.push(p);
+  }
+  route.push({x:dest.x, y:dest.y});
+  return route;
+}
+// Jede Figur bekommt Vorlieben: zwei Dinge, die sie mag, eines, das sie nicht mag.
+// Dadurch reagieren dieselben Leute immer gleich auf dasselbe Thema.
+function rollTastes(){
+  const pool = CHAT_TOPICS.slice();
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  return { mag: pool.slice(0,2), magNicht: pool.slice(2,3) };
+}
+
+/* ============ KLEINE GESPRÄCHE ZWISCHEN NPCs ============
+   Wer sich zufällig begegnet, bleibt manchmal kurz stehen und plaudert.
+   Über den Köpfen ploppen Icons auf: einer bringt ein Thema, der andere
+   reagiert je nach Geschmack mit Herz, bösem Blick, Lachen oder Fragezeichen. */
+const CHAT = {
+  RADIUS: 34,       // ab dieser Nähe gilt es als Begegnung
+  CHANCE: 0.3,      // 30% der Begegnungen werden ein Gespräch
+  DUR: 3.2,         // wie lange geplaudert wird
+  REPLY_AT: 1.4,    // ab wann die Antwort erscheint
+  COOLDOWN: 8,      // danach hat die Figur erstmal genug
+  CHECK: 0.4        // Prüfintervall
+};
+let chatCheckT = 0;
+
+// Stehende NPCs, die mitplaudern dürfen (nicht mitten in ihrer Mission)
+function chatEligibleNpcs(){
+  return npcs.filter(n=>{
+    if(n.id==='kobi'  && state.flags.kobiBadTrip  && !state.flags.kobiCalmed)   return false;
+    if(n.id==='tomas' && state.flags.tomasBadTrip && !state.flags.tomasGrounded) return false;
+    return true;
+  });
+}
+// Reaktion aus dem Geschmack ableiten
+function reactionFor(who, topic){
+  const t = who.tastes;
+  if(!t) return pick(['lach','frage','ausruf']);
+  if(t.mag.includes(topic))      return 'herz';
+  if(t.magNicht.includes(topic)) return 'boese';
+  return pick(['lach','frage','ausruf','lach']);
+}
+// Ein Gespräch zwischen zwei Figuren starten
+function startChat(a, b){
+  const topic = pick(CHAT_TOPICS);
+  a.chat = { t:CHAT.DUR, icon:topic, role:'ask',   partner:b };
+  b.chat = { t:CHAT.DUR, icon:reactionFor(b,topic), role:'reply', partner:a };
+  a.chatCool = b.chatCool = CHAT.COOLDOWN;
+  // zueinander schauen
+  const dx = b.x-a.x, dy = b.y-a.y;
+  if(Math.abs(dx)>Math.abs(dy)){ a.facing = dx>0?'right':'left'; b.facing = dx>0?'left':'right'; }
+  else                         { a.facing = dy>0?'down':'up';    b.facing = dy>0?'up':'down'; }
+}
+// Läuft gerade ein Gespräch? Dann steht die Figur still.
+function isChatting(e){ return e.chat && e.chat.t>0; }
+
+function chatsUpdate(dt){
+  // laufende Gespräche herunterzählen
+  for(const w of wanderers){
+    if(w.chat){ w.chat.t-=dt; if(w.chat.t<=0) w.chat=null; }
+    if(w.chatCool>0) w.chatCool-=dt;
+  }
+  for(const n of npcs){
+    if(n.chat){ n.chat.t-=dt; if(n.chat.t<=0) n.chat=null; }
+    if(n.chatCool>0) n.chatCool-=dt; else if(n.chatCool===undefined) n.chatCool=0;
+    if(!n.tastes) n.tastes = rollTastes();
+  }
+  // nur alle CHAT.CHECK Sekunden nach neuen Begegnungen suchen
+  chatCheckT -= dt;
+  if(chatCheckT>0) return;
+  chatCheckT = CHAT.CHECK;
+  const frei = e => !isChatting(e) && (e.chatCool||0)<=0;
+  // Wanderer untereinander
+  for(let i=0;i<wanderers.length;i++){
+    const a=wanderers[i];
+    if(!frei(a)) continue;
+    for(let j=i+1;j<wanderers.length;j++){
+      const b=wanderers[j];
+      if(!frei(b)) continue;
+      if(Math.hypot(a.x-b.x, a.y-b.y) < CHAT.RADIUS){
+        if(Math.random() < CHAT.CHANCE) startChat(a,b);
+        break;
+      }
+    }
+  }
+  // Wanderer treffen stehende NPCs
+  for(const n of chatEligibleNpcs()){
+    if(!frei(n)) continue;
+    for(const w of wanderers){
+      if(!frei(w)) continue;
+      if(Math.hypot(n.x-w.x, n.y-w.y) < CHAT.RADIUS){
+        if(Math.random() < CHAT.CHANCE) startChat(w,n);
+        break;
+      }
+    }
+  }
+}
+
+/* --- Sprechblase über dem Kopf; nachts leuchtet sie leicht --- */
+function drawChatBubble(e){
+  const c = e.chat;
+  if(!c || c.t<=0) return;
+  // Die Antwort erscheint etwas später als die Frage
+  if(c.role==='reply' && c.t > CHAT.DUR-CHAT.REPLY_AT) return;
+  const icon = CHAT_ICONS[c.icon];
+  if(!icon) return;
+  // sanftes Auf- und Abblenden
+  const age = CHAT.DUR - c.t;
+  let a = 1;
+  if(age < 0.18) a = age/0.18;
+  else if(c.t < 0.4) a = c.t/0.4;
+  const bob = Math.sin(state.time*3 + e.x)*0.8;
+  const bx = Math.round(e.x) - 6, by = Math.round(e.y) - 30 + Math.round(bob);
+  ctx.save();
+  ctx.globalAlpha = a;
+  const d = darkness();
+  if(d > 0.15){   // nachts ein warmer Schein, damit die Blase nicht verschwindet
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const g=ctx.createRadialGradient(bx+6,by+6,1, bx+6,by+6,18);
+    g.addColorStop(0,'rgba(255,235,190,'+(0.30*d*a).toFixed(3)+')');
+    g.addColorStop(1,'rgba(255,220,160,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(bx+6,by+6,18,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  // Blase
+  ctx.fillStyle='#5a4632'; ctx.fillRect(bx-1,by-1,15,15);
+  ctx.fillStyle='#fdf3dc'; ctx.fillRect(bx,by,13,13);
+  ctx.fillStyle='#5a4632'; ctx.fillRect(bx+5,by+13,3,2); ctx.fillRect(bx+6,by+15,2,1);
+  ctx.fillStyle='#fdf3dc'; ctx.fillRect(bx+5,by+13,2,1);
+  icon(bx+2, by+2);
+  ctx.restore();
+}
+
+function spawnWanderer(){
+  const entry=pick(EXITS);
+  const dest=pick(EXITS.filter(e=>e.id!==entry.id));       // immer ein anderer Ausgang
+  wanderers.push({
+    x:entry.x+(Math.random()*24-12), y:entry.y,
+    facing:'down', moving:true, animT:Math.random()*2, frame:0,
+    pal:randomWandererPal(), gridSet:PLAYER_GRIDS,
+    entry:entry.id, dest:dest.id,
+    route:buildRoute(entry,dest),
+    travelT:0, stuckT:0,
+    tastes: rollTastes(),
+    chat: null, chatCool: 2+Math.random()*4,
+    speed: 34+Math.random()*18                             // jeder trödelt anders
+  });
+}
+// Schlanke Kollision nur gegen feste Objekte – Randwände gelten hier nicht,
+// damit Wanderer die Karte durch die Ausgänge betreten und verlassen können.
+function moveWanderer(w, dx, dy){
+  w.x += dx;
+  let box = entBox(w);
+  for(const s of solids){
+    if(rectsOverlap(box,s)){
+      if(dx>0) w.x = s.x - 5; else if(dx<0) w.x = s.x + s.w + 5;
+      box = entBox(w);
+    }
+  }
+  w.y += dy;
+  box = entBox(w);
+  for(const s of solids){
+    if(rectsOverlap(box,s)){
+      if(dy>0) w.y = s.y - 0.01; else if(dy<0) w.y = s.y + s.h + 7;
+      box = entBox(w);
+    }
+  }
+}
+function wanderersUpdate(dt){
+  // Nachschub, wenn der Bestand unter das Minimum fällt
+  // (kurzes Intervall: beim Durchgangsverkehr despawnen oft mehrere fast gleichzeitig)
+  if(wanderers.length<WANDERER_MIN){
+    wandererRespawnT-=dt;
+    if(wandererRespawnT<=0){ wandererRespawnT=0.25+Math.random()*0.5; spawnWanderer(); }
+  }
+  for(let i=wanderers.length-1;i>=0;i--){
+    const w=wanderers[i];
+    // Wer gerade plaudert, bleibt stehen (Plauderzeit zählt nicht als Wegzeit)
+    if(isChatting(w)){ w.moving=false; continue; }
+    // Failsafe: Wer nach 60 s immer noch unterwegs ist, hat eben
+    // abseits der Kamera einen anderen Weg gefunden.
+    w.travelT+=dt;
+    if(w.travelT>60){ wanderers.splice(i,1); continue; }
+    const wp=w.route[0];
+    if(!wp){ wanderers.splice(i,1); continue; }
+    const dx=wp.x-w.x, dy=wp.y-w.y, dist=Math.hypot(dx,dy);
+    if(dist<6){
+      w.route.shift();
+      if(!w.route.length){ wanderers.splice(i,1); }        // Ziel-Ausgang erreicht
+      continue;
+    }
+    w.moving=true;
+    const vx=dx/dist, vy=dy/dist;
+    w.facing = Math.abs(vx)>Math.abs(vy) ? (vx>0?'right':'left') : (vy>0?'down':'up');
+    const ox=w.x, oy=w.y;
+    moveWanderer(w, vx*w.speed*dt, vy*w.speed*dt);
+    // Steckt er fest (Zelt/Baum im Weg)? Losrütteln und notfalls
+    // die Zwischenpunkte überspringen (direkt Richtung Ausgang).
+    if(Math.hypot(w.x-ox, w.y-oy) < w.speed*dt*0.3){
+      w.stuckT+=dt;
+      if(w.stuckT>0.7){
+        w.stuckT=0;
+        w.x+=(Math.random()-0.5)*16; w.y+=(Math.random()-0.5)*16;
+        if(w.route.length>1) w.route=[w.route[w.route.length-1]];
+      }
+    } else w.stuckT=0;
+    w.animT+=dt; w.frame=Math.floor(w.animT*7)%4;
+  }
+}
+// Startbestand: 10 Wanderer, bereits mitten auf ihren Wegen verteilt
+// (als wäre der Durchgangsverkehr schon eine Weile im Gange)
+function seedWanderers(){
+  wanderers.length=0;
+  wandererRespawnT=0;
+  for(let i=0;i<WANDERER_MIN;i++){
+    spawnWanderer();
+    const w=wanderers[wanderers.length-1];
+    const entry=EXITS.find(e=>e.id===w.entry), dest=EXITS.find(e=>e.id===w.dest);
+    const t=0.15+Math.random()*0.7;
+    const p=freeSpotNear(lerp(entry.x,dest.x,t), lerp(entry.y,dest.y,t));
+    if(p){ w.x=p.x; w.y=p.y; }
+    w.chatCool = Math.random()*6;                          // nicht alle gleichzeitig loslegen
+    w.route=[w.route[w.route.length-1]];                   // nur noch das Ziel ansteuern
   }
 }
 
@@ -1054,7 +3121,7 @@ function emptyAshtray(isRest){
 
 /* --- Lagerfeuer: Spielstand speichern (3 Slots) --- */
 const SAVE_SLOTS = 3;
-const SAVE_PREFIX = 'festivalfieber_save_';
+const SAVE_PREFIX = 'dataluma_save_';
 function slotKey(n){ return SAVE_PREFIX + n; }
 // Liest einen Slot (oder null, wenn leer / Speicher gesperrt / kaputt)
 function readSlot(n){
@@ -1098,7 +3165,12 @@ function saveGame(slot){
     flags: state.flags,
     journal: state.journal,
     energy: Math.round(state.energy),
-    social: Math.round(state.social)
+    social: Math.round(state.social),
+    clock: { min: Math.round(state.clock.min), day: state.clock.day },
+    scene: state.scene,
+    onBike: state.onBike,
+    flashlight: state.flashlight,
+    outdoorPos: state.outdoorPos
   };
   try {
     localStorage.setItem(slotKey(slot), JSON.stringify(data));
@@ -1136,6 +3208,12 @@ function loadGame(s){
     state.inv = Array.isArray(s.inv) ? s.inv : [];
     state.wearingGlasses = !!s.wearingGlasses;
     state.ashtray = clamp(s.ashtray|0, 0, CFG.ASH_CAPACITY);
+    // Sympathie auf Startwerte zurücksetzen, damit nichts aus der
+    // vorherigen Runde stehen bleibt, dann den Spielstand darüberlegen
+    for(const d of DEFAULT_SYMPATHY){
+      const t = state.sympathy.find(x=>x.id===d.id);
+      if(t){ t.val = d.val; t.name = d.name; }
+    }
     if(Array.isArray(s.sympathy)){
       for(const sv of s.sympathy){
         const t = state.sympathy.find(x=>x.id===sv.id);
@@ -1143,14 +3221,29 @@ function loadGame(s){
       }
     }
     if(s.friendName) setFriend(s.friendName);
+    // Flags komplett ersetzen (nicht mischen!), sonst schleppt man
+    // erledigte Missionen aus der letzten Runde mit
+    for(const k of Object.keys(state.flags)) delete state.flags[k];
     Object.assign(state.flags, s.flags||{});
+    // Konsistenz: Wer geraucht hat und Kobi noch nicht beruhigt hat,
+    // findet ihn nach dem Laden im Bad Trip vor (das High selbst wird nicht gespeichert)
+    if(state.flags.kobiJointDone && !state.flags.kobiCalmed) state.flags.kobiBadTrip=true;
+    if(state.flags.tomasTripDone && !state.flags.tomasGrounded) state.flags.tomasBadTrip=true;
     if(s.journal) state.journal = s.journal;
     state.energy = clamp(s.energy ?? 72, 0, 100);
     state.social = clamp(s.social ?? 60, 0, 100);
-    // Überblendung passend zum Brillen-Zustand wiederherstellen
-    state.whiteTarget = state.wearingGlasses ? 0 : (getItem('glasses') ? 0.32 : 0.5);
-    state.whiteAlpha = state.whiteTarget;
+    // Alte Spielstände ohne Uhr starten einfach wieder um 14:00 an Tag 1
+    state.clock.min = clamp(s.clock?.min ?? 14*60, 0, 1439);
+    state.clock.day = Math.max(1, s.clock?.day ?? 1);
+    state.scene = s.scene || (s.indoor ? 'tent' : 'camp');
+    state.onBike = !!s.onBike;
+    state.flashlight = !!s.flashlight;
+    state.outdoorPos = s.outdoorPos ?? null;
+    state.fade = 0; state.fadeDir = 0;
+    state.whiteTarget = 0; state.whiteAlpha = 0;
+    state.expo = exposure();   // sofort passend zur geladenen Uhrzeit
     state.mode='game'; state.cutscene=false;
+    seedWanderers();
     state.helpTimer=8;
     toast("Spielstand geladen. Weiter geht's!");
   } catch(err) {
@@ -1175,6 +3268,29 @@ function findCandidate(){
   const [fx,fy] = facingVec();
   const px = player.x + fx*12, py = player.y - 4 + fy*12;
   let best=null, bestD=26;
+  // Im Zelt gibt es nur die Sachen darin
+  if(state.scene==='tent'){
+    for(const o of tentObjects){
+      const d=Math.hypot(o.ax-px, o.ay-4-py);
+      if(d<bestD){ bestD=d; best={x:o.ax, y:o.ay-24, act:()=>o.talk(o)}; }
+    }
+    currentCandidate = best;
+    return;
+  }
+  // Auf dem Festivalgelände ebenso
+  if(state.scene==='stage'){
+    for(const n of stageNpcs){
+      const d=Math.hypot(n.x-px, n.y-6-py);
+      if(d<bestD){ bestD=d; best={x:n.x, y:n.y-18, act:()=>n.talk(n)}; }
+    }
+    for(const o of stageObjects){
+      if(!o.text && !o.talk) continue;
+      const d=Math.hypot(o.ax-px, o.ay-4-py);
+      if(d<bestD){ bestD=d; best={x:o.ax, y:o.ay-22, act:()=> o.talk ? o.talk(o) : objTalk(o)}; }
+    }
+    currentCandidate = best;
+    return;
+  }
   for(const n of npcs){
     const d=Math.hypot(n.x-px, n.y-6-py);
     if(d<bestD){ bestD=d; best={x:n.x, y:n.y-18, act:()=>n.talk(n)}; }
@@ -1187,6 +3303,10 @@ function findCandidate(){
       best={x:o.ax, y:(o.type==='tent'? o.y+14 : o.ay-22),
             act:()=> o.talk ? o.talk(o) : objTalk(o)};
     }
+  }
+  for(const a of tripAnimals){
+    const d=Math.hypot(a.x-px, a.y-6-py);
+    if(d<bestD){ bestD=d; best={x:a.x, y:a.y-16, act:()=>animalTalk(a)}; }
   }
   currentCandidate = best;
 }
@@ -1243,29 +3363,206 @@ function portraitFor(who){
   if(who==='harvey') return {grid:PORTRAIT_HARVEY, pal:PORTRAIT_HARVEY_PAL};
   if(who==='player') return {grid:PORTRAIT_PLAYER, pal:portraitPlayerPal()};
   if(who==='friend') return {grid:PORTRAIT_PLAYER, pal:PORTRAIT_FRIEND_PAL};
+  if(who==='kobi')   return {grid:PORTRAIT_PLAYER, pal:PORTRAIT_KOBI_PAL};
+  if(who==='tomas')  return {grid:PORTRAIT_PLAYER, pal:PORTRAIT_TOMAS_PAL};
+  if(who==='momo')   return {grid:PORTRAIT_PLAYER, pal:PORTRAIT_MOMO_PAL};
+  if(who==='kip')    return {grid:PORTRAIT_PLAYER, pal:PORTRAIT_KIP_PAL};
+  if(who==='vera')   return {grid:PORTRAIT_PLAYER, pal:PORTRAIT_VERA_PAL};
+  if(who==='rocco')  return {grid:PORTRAIT_PLAYER, pal:PORTRAIT_ROCCO_PAL};
   return null;
 }
 function speakerName(node){
   if(node.who==='harvey') return 'Harvey';
   if(node.who==='player') return state.playerName;
   if(node.who==='friend') return state.friendName||'???';
+  if(node.who==='kobi')   return 'Kobi';
+  if(node.who==='tomas')  return 'Tomás';
+  if(node.who==='momo')   return 'Momo';
+  if(node.who==='kip')    return 'Kip';
+  if(node.who==='vera')   return 'Vera';
+  if(node.who==='rocco')  return 'Rocco';
   return node.name||'';
+}
+
+/* --- Beleuchtung ---
+   Bei Dunkelheit wird zuerst eine finstere Schicht über die Welt gelegt,
+   dann stanzen alle Lichtquellen Löcher hinein und legen ihre Farbe obendrauf.
+   Bei Helligkeit über null blendet stattdessen die Sonne. */
+const lightBuf = document.createElement('canvas');
+lightBuf.width = GAME_W; lightBuf.height = GAME_H;
+const lctx = lightBuf.getContext('2d');
+
+// Flackern/Pulsieren je nach Lichtart
+function lightPulse(l){
+  const t = state.time;
+  switch(l.flicker){
+    case 'fire':    return 0.82 + Math.sin(t*9 + l.seed)*0.09 + Math.sin(t*23 + l.seed*2)*0.05;
+    case 'twinkle': return 0.72 + Math.sin(t*2.6 + l.seed)*0.28;
+    case 'hum':     return 0.94 + Math.sin(t*1.7 + l.seed)*0.06;
+    case 'buzz':    return (Math.sin(t*31 + l.seed) > -0.93) ? 1 : 0.35;   // Neonzucken
+    case 'sweep':   return 0.55 + Math.sin(t*0.8 + l.seed)*0.45;
+    case 'lamp':    return 0.97 + Math.sin(t*11 + l.seed)*0.03;   // ganz leichtes Wackeln
+    default:        return 1;
+  }
+}
+
+// Alle Lichtquellen der Szene einsammeln (statische + Feuer + Taschenlampe)
+function collectLights(){
+  const out = [];
+  if(state.scene==='camp'){
+    for(const l of lights) out.push(l);
+    for(const o of objects){
+      if(o.type === 'fire')
+        out.push({ x:o.x, y:o.base-5, r:o.small?70:104, col:'255,150,60', s:1, flicker:'fire', seed:o.x });
+    }
+  } else if(state.scene==='stage'){
+    for(const l of stageLights) out.push(l);
+  }
+  // Taschenlampe: gerichteter Kegel plus schwacher Schein direkt um den Spieler
+  if(state.flashlight){
+    const winkel = { up:-Math.PI/2, down:Math.PI/2, left:Math.PI, right:0 };
+    const a = winkel[player.facing] ?? Math.PI/2;
+    out.push({ x:player.x, y:player.y-6, r:132, col:'255,244,214', s:1,
+               flicker:'lamp', seed:7, cone:{ ang:a, spread:0.60 } });
+    out.push({ x:player.x, y:player.y-6, r:38, col:'255,240,205', s:0.7, flicker:'lamp', seed:7 });
+  }
+  return out;
+}
+
+// Umriss einer Lichtquelle: Kreis oder Kegel
+function lightShape(c, l, sx, sy, r){
+  c.beginPath();
+  if(l.cone){
+    c.moveTo(sx, sy);
+    c.arc(sx, sy, r, l.cone.ang - l.cone.spread, l.cone.ang + l.cone.spread);
+    c.closePath();
+  } else {
+    c.arc(sx, sy, r, 0, Math.PI*2);
+  }
+  c.fill();
+}
+
+function drawLighting(){
+  const e = state.expo;
+  // --- Zu hell: Sonne blendet ---
+  if(e > 0.004){
+    ctx.fillStyle = 'rgba(255,247,225,'+Math.min(1,e).toFixed(3)+')';
+    ctx.fillRect(0,0,GAME_W,GAME_H);
+    return;
+  }
+  // --- Zu dunkel: Nachtschicht mit Lichtern ---
+  const dark = Math.min(1, -e);
+  if(dark < 0.004) return;
+  lctx.clearRect(0,0,GAME_W,GAME_H);
+  lctx.globalCompositeOperation = 'source-over';
+  lctx.fillStyle = 'rgba(14,12,34,'+dark.toFixed(3)+')';
+  lctx.fillRect(0,0,GAME_W,GAME_H);
+  // Lichter fressen Löcher in die Dunkelheit
+  const all = collectLights();
+  lctx.globalCompositeOperation = 'destination-out';
+  for(const l of all){
+    const sx = Math.round(l.x - camX), sy = Math.round(l.y - camY);
+    if(sx < -l.r-20 || sx > GAME_W+l.r+20 || sy < -l.r-20 || sy > GAME_H+l.r+20) continue;
+    const p = lightPulse(l), r = l.r * (0.94 + p*0.06);
+    const a = Math.min(1, l.s * p);
+    const g = lctx.createRadialGradient(sx,sy,1, sx,sy,r);
+    g.addColorStop(0,   'rgba(0,0,0,'+(0.98*a).toFixed(3)+')');
+    g.addColorStop(0.35,'rgba(0,0,0,'+(0.66*a).toFixed(3)+')');
+    g.addColorStop(0.7, 'rgba(0,0,0,'+(0.24*a).toFixed(3)+')');
+    g.addColorStop(1,   'rgba(0,0,0,0)');
+    lctx.fillStyle = g;
+    lightShape(lctx, l, sx, sy, r);
+  }
+  ctx.drawImage(lightBuf,0,0);
+  // Farbiger Schein der Lichter obendrauf: das macht die Gemütlichkeit
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for(const l of all){
+    const sx = Math.round(l.x - camX), sy = Math.round(l.y - camY);
+    if(sx < -l.r-20 || sx > GAME_W+l.r+20 || sy < -l.r-20 || sy > GAME_H+l.r+20) continue;
+    const p = lightPulse(l);
+    const r = l.r * 0.82;
+    const a = 0.30 * l.s * p * dark;
+    const g = ctx.createRadialGradient(sx,sy,1, sx,sy,r);
+    g.addColorStop(0,   'rgba('+l.col+','+a.toFixed(3)+')');
+    g.addColorStop(0.5, 'rgba('+l.col+','+(a*0.42).toFixed(3)+')');
+    g.addColorStop(1,   'rgba('+l.col+',0)');
+    ctx.fillStyle = g;
+    lightShape(ctx, l, sx, sy, r);
+  }
+  ctx.restore();
+}
+
+/* --- Uhrzeit oben mittig, mit Sonne/Mond je nach Tageszeit --- */
+function drawClock(){
+  const txt = clockText();
+  ctx.font = 'bold 9px monospace'; ctx.textBaseline = 'top';
+  const tw = ctx.measureText(txt).width;
+  const w = tw + 20, x = Math.round(GAME_W/2 - w/2), y = 6;
+  ctx.fillStyle = 'rgba(30,25,40,0.55)'; ctx.fillRect(x, y, w, 13);
+  const d = darkness();
+  const ix = x + 5, iy = y + 4;
+  if(d > 0.5){                        // Mond
+    ctx.fillStyle = '#dfe4f2';
+    ctx.fillRect(ix+1,iy,4,1); ctx.fillRect(ix,iy+1,5,3); ctx.fillRect(ix+1,iy+4,4,1);
+    ctx.fillStyle = 'rgba(30,25,40,0.55)';
+    ctx.fillRect(ix+3,iy,3,2); ctx.fillRect(ix+4,iy+2,2,2);
+  } else {                            // Sonne
+    ctx.fillStyle = '#f2c14e';
+    ctx.fillRect(ix+1,iy+1,4,3); ctx.fillRect(ix+2,iy,2,5);
+    ctx.fillRect(ix,iy+2,6,1);
+  }
+  ctx.fillStyle = '#fdf3dc';
+  ctx.fillText(txt, x + 14, y + 2);
+}
+
+/* --- Ein HUD-Knopf: Icon, Beschriftung und Tastenkürzel, damit man's immer sieht --- */
+function hudButton(bx, by, icon, label, key, active, onClick){
+  ctx.fillStyle = active ? '#e8a44a' : '#5a4632';
+  ctx.fillRect(bx-3,by-3,24,24);
+  ctx.fillStyle = active ? '#fff3d8' : '#fdf3dc';
+  ctx.fillRect(bx-1,by-1,20,20);
+  icon(bx+1,by+1);
+  region(bx-3,by-3,24,24,onClick);
+  ctx.font='7px monospace'; ctx.textBaseline='top';
+  // Tastenkürzel als kleines helles Kästchen in der Ecke des Knopfes
+  const kw = Math.ceil(ctx.measureText(key).width);
+  ctx.fillStyle='#3b2f2f';   ctx.fillRect(bx+18-kw-2, by-3, kw+5, 10);
+  ctx.fillStyle='#e8c46a';   ctx.fillRect(bx+18-kw-1, by-2, kw+3, 8);
+  ctx.fillStyle='#3b2f2f';   ctx.fillText(key, bx+18-kw, by-1);
+  // Beschriftung mittig unter dem Knopf
+  const lw = Math.ceil(ctx.measureText(label).width);
+  const lx = Math.round(bx + 9 - lw/2);
+  ctx.fillStyle='rgba(30,25,40,0.62)';
+  ctx.fillRect(lx-2, by+22, lw+4, 9);
+  ctx.fillStyle='#fdf3dc'; ctx.fillText(label, lx, by+23);
 }
 
 function drawHUD(){
   if(state.cutscene) return;
+  drawClock();
   hudBar(8,10,64,6,state.energy/100,'#e8944a','ENERGIE');
   hudBar(8,24,64,6,state.social/100,'#5f9bd9','SOZIAL');
-  const bx=GAME_W-26, by=6;
-  ctx.fillStyle='#5a4632'; ctx.fillRect(bx-3,by-3,24,24);
-  ctx.fillStyle='#fdf3dc'; ctx.fillRect(bx-1,by-1,20,20);
-  ICONS.bag(bx+1,by+1);
-  region(bx-3,by-3,24,24,()=>{
+  // Rucksack oben rechts
+  hudButton(GAME_W-26, 6, ICONS.bag, 'Menü', 'I', false, ()=>{
     if(!state.dialog && !state.cutscene) state.menu = state.menu ? null : {tab:'bag', sel:-1};
   });
-  ctx.font='7px monospace'; ctx.fillStyle='rgba(30,25,40,0.55)';
-  ctx.fillRect(bx-2,by+22,22,9);
-  ctx.fillStyle='#fdf3dc'; ctx.textBaseline='top'; ctx.fillText('Menü',bx+1,by+23);
+  // Sonnenbrille direkt darunter
+  hudButton(GAME_W-26, 44, ICONS.glasses, 'Brille', 'B', state.wearingGlasses, ()=>{
+    if(!state.dialog && !state.cutscene) toggleGlasses();
+  });
+  // Taschenlampe, sobald du eine hast
+  if(getItem('lamp')){
+    hudButton(GAME_W-26, 82, ICONS.lamp, 'Lampe', 'F', state.flashlight, ()=>{
+      if(!state.dialog && !state.cutscene) toggleLamp();
+    });
+  }
+  // Fahrrad, sobald du eins hast
+  if(state.flags.bikeTaken){
+    hudButton(GAME_W-26, 120, ICONS.bike, 'Rad', 'R', state.onBike, ()=>{
+      if(!state.dialog && !state.cutscene) toggleBike();
+    });
+  }
 }
 function hudBar(x,y,w,h,p,col,label){
   ctx.fillStyle='rgba(30,25,40,0.55)'; ctx.fillRect(x-2,y-2,w+4,h+4);
@@ -1318,6 +3615,9 @@ function drawDialog(){
     tx=bx+82;
   }
   nameTag(speakerName(node), bx+6, by-9);
+  // Während des Bad-Trip-Gesprächs: Kobis Angst- bzw. Tomás' Panik-Level anzeigen
+  if(node.bt)  hudBar(8,42,64,6, clamp((state.kobiFear||0)/5,0,1),   '#c9402f','ANGST');
+  if(node.bt2) hudBar(8,42,64,6, clamp((state.tomasPanic||0)/5,0,1), '#9b4fc9','PANIK');
   ctx.font='10px monospace'; ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
   drawWrapped(full.slice(0,Math.floor(d.chars)), tx, by+14, bx+bw-12-tx, 13);
   const ch=nodeChoices(node);
@@ -1527,6 +3827,7 @@ function creationPreview(cx,baseY){
   else { grid=BODY_SIDE; flip=(creation.face==='right'); }
   const fr=Math.floor(creation.t*5)%4;
   const legs = fr===1?LEGS_A : fr===3?LEGS_B : LEGS_IDLE;
+  // Die letzten 3 Zeilen sind die Beine (Lauf-Animation)
   const g=grid.slice(0,13).concat(legs);
   ctx.save(); ctx.translate(cx-36, baseY-96); ctx.scale(6,6);
   drawGrid(g,pal,0,0,flip);
@@ -1556,7 +3857,7 @@ function drawStartBackdrop(){
   drawMiniTent(46,178,'#e8836f'); drawMiniTent(88,184,'#9b7fc9'); drawMiniTent(430,182,'#5fb3a8');
   ctx.textBaseline='top';
   ctx.font='bold 26px monospace';
-  const title='FESTIVALFIEBER';
+  const title='DATALUMA';
   const tw=ctx.measureText(title).width;
   ctx.fillStyle='#5a4632'; ctx.fillText(title,(GAME_W-tw)/2+2,18);
   ctx.fillStyle='#e8944a'; ctx.fillText(title,(GAME_W-tw)/2,16);
@@ -1673,8 +3974,13 @@ function startGame(){
   state.mode='game';
   state.cutscene=true;
   state.whiteAlpha=1; state.whiteTarget=0.88;   // "Es ist sooo hell..."
+  state.clock.min = 14*60; state.clock.day = 1; // Ankunft am Nachmittag
+  state.scene = 'camp'; state.flashlight = false; state.onBike = false;
+  state.fade = 0; state.fadeDir = 0; state.outdoorPos = null;
+  state.expo = exposure();
   player.pal=playerPal();
   player.facing='down';
+  seedWanderers();
   introPhase='wait'; introT=0;
 }
 function introUpdate(dt){
@@ -1711,6 +4017,11 @@ function update(dt){
   updateToasts(dt);
   state.whiteAlpha += (state.whiteTarget-state.whiteAlpha)*Math.min(1,dt*2.2);
   if(Math.abs(state.whiteAlpha-state.whiteTarget)<0.005) state.whiteAlpha=state.whiteTarget;
+  // Augen gewöhnen sich langsam: Helligkeit gleitet zum Zielwert
+  const eT = exposure();
+  state.expo += (eT-state.expo)*Math.min(1,dt*2.6);
+  if(Math.abs(eT-state.expo)<0.002) state.expo = eT;
+  fadeUpdate(dt);
   if(state.mode==='title'){ interactQueued=false; escQueued=false; return; }
   if(state.mode==='create'){ creation.t+=dt; interactQueued=false; escQueued=false; return; }
   if(state.helpTimer>0) state.helpTimer-=dt;
@@ -1734,8 +4045,81 @@ function update(dt){
     interactQueued=false;
     return;
   }
+  // Während der Schwarzblende steht alles still, auch die Uhr
+  if(state.fadeDir!==0){ player.moving=false; interactQueued=false; return; }
+  clockUpdate(dt);
+  // Im Zelt läuft nur das Nötige: laufen, Gegenstände, Statuswerte
+  if(state.scene==='tent'){
+    playerUpdate(dt);
+    statusUpdate(dt);
+    findCandidate();
+    if(interactQueued){ interactQueued=false; tryInteract(); }
+    return;
+  }
+  // Auf dem Festivalgelände: laufen, Crew, Gegenstände
+  if(state.scene==='stage'){
+    playerUpdate(dt);
+    statusUpdate(dt);
+    particlesUpdate(dt);
+    findCandidate();
+    if(interactQueued){ interactQueued=false; tryInteract(); }
+    return;
+  }
   playerUpdate(dt);
+  // High-Zustand: Zeit läuft nur beim aktiven Spielen ab
+  if(state.high.t>0){
+    state.high.t -= dt;
+    // Glitzer-Partikel schweben um die Figur
+    state.high.spark = (state.high.spark||0) - dt;
+    if(state.high.spark<=0 && highFactor()>0.3){
+      state.high.spark = 0.22;
+      particles.push({ x:player.x+(Math.random()*60-30), y:player.y-(Math.random()*22),
+        vx:(Math.random()-0.5)*4, vy:-5-Math.random()*6, life:2.2,
+        col:pick(['rgba(255,214,140,0.7)','rgba(255,170,190,0.6)','rgba(170,220,255,0.6)','rgba(200,255,180,0.6)']),
+        size:1+Math.floor(Math.random()*2) });
+    }
+    if(state.high.t<=0){
+      state.high.t=0;
+      if(state.trip.t<=0) trail.length=0;
+      toast('Langsam wird dein Kopf wieder klar.');
+      // Phase 2: Kobi geht es inzwischen gar nicht gut
+      if(state.flags.kobiJointDone && !state.flags.kobiCalmed){
+        state.flags.kobiBadTrip = true;
+        toast('Irgendwas sagt dir: Schau mal nach Kobi.');
+      }
+    }
+  }
+  // Acid-Trip: Timer und Glitch-Blitze
+  if(state.trip.t>0){
+    state.trip.t -= dt;
+    state.trip.gw -= dt;
+    if(state.trip.gw<=0 && tripFactor()>0.6){
+      state.trip.gw = 4+Math.random()*6;         // nächster Glitch in 4–10 s
+      state.trip.glitch = 0.12;                  // Blitzdauer
+      state.trip.glitchHue = Math.random()*360;  // Blitzfarbe
+    }
+    if(state.trip.glitch>0) state.trip.glitch -= dt;
+    if(state.trip.t<=0){
+      state.trip.t=0;
+      if(state.high.t<=0) trail.length=0;
+      toast('Die Farben beruhigen sich langsam wieder.');
+      // Phase 2: Tomás hat es deutlich härter erwischt
+      if(state.flags.tomasTripDone && !state.flags.tomasGrounded){
+        state.flags.tomasBadTrip = true;
+        toast('Tomás sah eben gar nicht gut aus...');
+      }
+    }
+  }
+  tripAnimalsUpdate(dt);
+  // Nachzieheffekt: Positionen der letzten Momente merken
+  if((highFactor()>0 || tripFactor()>0) && player.moving){
+    trail.push({ x:player.x, y:player.y, facing:player.facing, frame:player.frame });
+    const cap = tripFactor()>0 ? 20 : 10;        // Acid: deutlich längerer Trail
+    while(trail.length>cap) trail.shift();
+  } else if(state.high.t<=0 && state.trip.t<=0 && trail.length) trail.length=0;
   npcUpdate(dt);
+  wanderersUpdate(dt);
+  chatsUpdate(dt);
   smokeUpdate(dt);
   statusUpdate(dt);
   particlesUpdate(dt);
@@ -1743,23 +4127,112 @@ function update(dt){
   findCandidate();
   if(interactQueued){ interactQueued=false; tryInteract(); }
 }
+/* --- Das Zeltinnere zeichnen: der Raum ist kleiner als der Bildschirm
+       und wird deshalb mittig eingepasst statt von der Kamera verfolgt. --- */
+function drawIndoor(){
+  // Kamera so setzen, dass der Raum in der Mitte sitzt
+  camX = -Math.round((GAME_W - TENT.W)/2);
+  camY = -Math.round((GAME_H - TENT.H)/2);
+  // Dunkler Rand außerhalb der Plane
+  ctx.fillStyle='#15111f'; ctx.fillRect(0,0,GAME_W,GAME_H);
+  ctx.save();
+  ctx.translate(-camX,-camY);
+  drawTentInterior();
+  // Gegenstände und Spieler nach Tiefe sortiert
+  const list=[];
+  for(const o of tentObjects){ if(o.type!=='exit') list.push({y:o.base, f:()=>drawTentObject(o)}); }
+  list.push({y:player.y, f:()=>drawEntity(player)});
+  list.sort((a,b)=>a.y-b.y);
+  for(const it of list) it.f();
+  // E-Hinweis über dem Gegenstand, vor dem du stehst
+  if(currentCandidate && !state.dialog && !state.menu){
+    const c=currentCandidate;
+    ctx.font='bold 9px monospace'; ctx.textBaseline='top';
+    const w=ctx.measureText('E').width+8;
+    ctx.fillStyle='rgba(30,25,40,0.72)'; ctx.fillRect(c.x-w/2, c.y, w, 12);
+    ctx.fillStyle='#e8c46a'; ctx.fillText('E', c.x-w/2+4, c.y+2);
+  }
+  ctx.restore();
+  drawLighting();
+  drawHUD();
+  drawTouchPad();
+  drawTouchButton();
+  if(state.dialog) drawDialog();
+  if(state.menu) drawMenu();
+  drawToasts();
+  drawFade();
+}
+
+/* --- Schwarzblende beim Wechsel zwischen drinnen und draußen --- */
+function drawFade(){
+  if(state.fade <= 0.002) return;
+  ctx.fillStyle = 'rgba(12,10,18,'+Math.min(1,state.fade).toFixed(3)+')';
+  ctx.fillRect(0,0,GAME_W,GAME_H);
+}
 
 function draw(){
   uiRegions.length=0;
   ctx.fillStyle='#241f2e'; ctx.fillRect(0,0,GAME_W,GAME_H);
   if(state.mode==='title'){ drawTitle(); drawToasts(); return; }
   if(state.mode==='create'){ drawCreation(); drawToasts(); return; }
+  if(state.scene==='tent'){ drawIndoor(); return; }
+  if(state.scene==='stage'){ drawStage(); return; }
   camX=clamp(Math.round(player.x-GAME_W/2), 0, MAPW*TILE-GAME_W);
   camY=clamp(Math.round(player.y-GAME_H/2-10), 0, MAPH*TILE-GAME_H);
-  ctx.save(); ctx.translate(-camX,-camY);
+  const hf = highFactor();
+  const tf = tripFactor();
+  const camF = Math.max(hf, tf);
+  ctx.save();
+  if(camF>0){
+    // Sanftes 'Atmen': pulsiert zwischen 1,00 und 1,02 (nie unter 1,
+    // damit keine Kartenränder ins Bild rutschen)
+    const puls = 1 + (Math.sin(state.time*1.2)*0.5+0.5)*0.02*camF;
+    // Neigung und Schweben – im Acid-Trip deutlich stärker als beim High
+    const rot = Math.sin(state.time*0.6)*(0.01*hf + 0.018*tf);
+    ctx.translate(GAME_W/2, GAME_H/2); ctx.scale(puls,puls); ctx.rotate(rot); ctx.translate(-GAME_W/2,-GAME_H/2);
+    ctx.translate(Math.sin(state.time*0.8)*(3*hf+5*tf), Math.cos(state.time*0.55)*(2*hf+4*tf));
+  }
+  ctx.translate(-camX,-camY);
   ctx.drawImage(ground,0,0);
   for(const s of stubsOnGround) drawStub(s);
+  // Nachzieheffekt: verblasste 'Geister' der letzten Positionen
+  const trailF = Math.max(hf, tf);
+  if(trailF>0){
+    const stp = tf>0 ? 1 : 2;                     // Acid: jeder Geist, Weed: jeder zweite
+    for(let i=0;i<trail.length;i+=stp){
+      const g=trail[i];
+      ctx.globalAlpha = (0.05 + (tf>0?0.16:0.10)*(i/trail.length)) * trailF;
+      drawEntity({ x:g.x, y:g.y, facing:g.facing, moving:true, frame:g.frame,
+                   pal:player.pal, gridSet:player.gridSet });
+    }
+    ctx.globalAlpha=1;
+  }
   const list=[];
-  for(const o of objects) list.push({y:o.base, f:()=>drawObject(o)});
+  // Hüllfunktion: lässt ein Objekt im Acid-Trip leicht 'atmen'
+  // (jedes mit eigener Phase über seine x-Position, Fußpunkt bleibt stehen)
+  const wob=(x,base,f)=>()=>{
+    if(tf<=0){ f(); return; }
+    const p=1+Math.sin(state.time*1.6 + x*0.13)*0.05*tf;
+    ctx.save(); ctx.translate(x,base); ctx.scale(p,p); ctx.translate(-x,-base); f(); ctx.restore();
+  };
+  for(const o of objects){
+    if(o.type==='tree'||o.type==='bush') list.push({y:o.base, f:wob(o.x,o.base,()=>drawObject(o))});
+    else list.push({y:o.base, f:()=>drawObject(o)});
+  }
   list.push({y:player.y, f:drawPlayerEnt});
-  for(const n of npcs) list.push({y:n.y, f:()=>drawEntity(n)});
+  for(const n of npcs){
+    let base = ()=>drawEntity(n);
+    if(n.id==='kobi'  && state.flags.kobiBadTrip  && !state.flags.kobiCalmed)   base = ()=>drawKobiCrouch(n);
+    if(n.id==='tomas' && state.flags.tomasBadTrip && !state.flags.tomasGrounded) base = ()=>drawTomasPanic(n);
+    list.push({y:n.y, f:wob(n.x,n.y,base)});
+  }
+  for(const a of tripAnimals) list.push({y:a.y, f:()=>drawAnimal(a)});
+  for(const w of wanderers) list.push({y:w.y, f:wob(w.x,w.y,()=>drawEntity(w))});
   list.sort((a,b)=>a.y-b.y);
   for(const it of list) it.f();
+  // Sprechblasen über allen Figuren, damit sie niemand verdeckt
+  for(const n of npcs) drawChatBubble(n);
+  for(const w of wanderers) drawChatBubble(w);
   for(const p of particles){
     ctx.fillStyle=p.col;
     ctx.fillRect(Math.round(p.x),Math.round(p.y),p.size,p.size);
@@ -1767,6 +4240,22 @@ function draw(){
   drawBunting(96,56,176,42);      // Wimpel im Spieler-Camp
   drawBunting(560,378,640,392);   // Wimpel im Camp im Südosten
   ctx.restore();
+  // Beleuchtung liegt auf der Welt – der Acid-Trip verzerrt sie danach mit
+  drawLighting();
+  // Acid: die ganze Welt wabert in Wellen und verschiebt langsam ihre Farben.
+  // Dazu wird das Bild in 4px-Streifen kopiert und sinusversetzt zurückgezeichnet.
+  if(tf>0){
+    sctx.clearRect(0,0,GAME_W,GAME_H);
+    sctx.drawImage(canvas,0,0);
+    ctx.fillStyle='#241f2e'; ctx.fillRect(0,0,GAME_W,GAME_H);
+    if(typeof ctx.filter==='string')
+      ctx.filter='hue-rotate('+(Math.sin(state.time*0.35)*CFG.TRIP_HUE_DEG*tf).toFixed(1)+'deg)';
+    for(let y=0; y<GAME_H; y+=4){
+      const off=Math.sin(y*0.045+state.time*2.2)*CFG.TRIP_WAVE_AMP*tf;
+      ctx.drawImage(scratch, 0,y,GAME_W,4, off,y,GAME_W,4);
+    }
+    if(typeof ctx.filter==='string') ctx.filter='none';
+  }
   // 'E'-Hinweis über interagierbaren Dingen
   if(!state.dialog && !state.menu && !state.cutscene && currentCandidate){
     const bx=Math.round(currentCandidate.x-camX)-5, by=Math.round(currentCandidate.y-camY)-12;
@@ -1778,6 +4267,35 @@ function draw(){
     ctx.fillText('E',bx+3,by+2);
   }
   drawSmokeBubble();
+  // Warmer Farbfilter während des Highs (über der Welt, unter HUD und Dialogen)
+  if(hf>0){
+    ctx.fillStyle='rgba(255,168,70,'+(CFG.HIGH_TINT_ALPHA*hf).toFixed(3)+')';
+    ctx.fillRect(0,0,GAME_W,GAME_H);
+    // Farbschimmer am Bildrand, der langsam durchs Farbspektrum wandert
+    const hue=(state.time*16)%360;
+    const vg=ctx.createRadialGradient(GAME_W/2,GAME_H/2,110,GAME_W/2,GAME_H/2,300);
+    vg.addColorStop(0,'rgba(0,0,0,0)');
+    vg.addColorStop(1,'hsla('+hue.toFixed(0)+',75%,62%,'+(0.20*hf).toFixed(3)+')');
+    ctx.fillStyle=vg; ctx.fillRect(0,0,GAME_W,GAME_H);
+  }
+  // Acid: kräftigere Regenbogen-Vignette (zwei Farbtöne, dreimal schnellerer Lauf)
+  if(tf>0){
+    const hue2=(state.time*48)%360;
+    const vg2=ctx.createRadialGradient(GAME_W/2,GAME_H/2,80,GAME_W/2,GAME_H/2,300);
+    vg2.addColorStop(0,'rgba(0,0,0,0)');
+    vg2.addColorStop(0.6,'hsla('+((hue2+120)%360).toFixed(0)+',85%,60%,'+(0.10*tf).toFixed(3)+')');
+    vg2.addColorStop(1,'hsla('+hue2.toFixed(0)+',85%,60%,'+(0.28*tf).toFixed(3)+')');
+    ctx.fillStyle=vg2; ctx.fillRect(0,0,GAME_W,GAME_H);
+    // Gelegentlicher Farbblitz mit zwei verrutschten Bildstreifen
+    if(state.trip.glitch>0){
+      ctx.fillStyle='hsla('+state.trip.glitchHue.toFixed(0)+',90%,65%,'+(0.16*tf).toFixed(3)+')';
+      ctx.fillRect(0,0,GAME_W,GAME_H);
+      const gy=(state.trip.glitchHue*1.7)%(GAME_H-40);
+      ctx.drawImage(canvas, 0,gy,GAME_W,10, 6,gy,GAME_W,10);
+      ctx.drawImage(canvas, 0,gy+22,GAME_W,8, -5,gy+22,GAME_W,8);
+    }
+  }
+  // Intro-Überblendung liegt über allem (nur während der Cutscene aktiv)
   if(state.whiteAlpha>0.004){
     ctx.fillStyle='rgba(255,247,225,'+state.whiteAlpha.toFixed(3)+')';
     ctx.fillRect(0,0,GAME_W,GAME_H);
@@ -1788,9 +4306,10 @@ function draw(){
   if(state.dialog) drawDialog();
   if(state.menu) drawMenu();
   drawToasts();
+  drawFade();
   if(state.helpTimer>0 && !state.dialog && !state.menu){
     ctx.font='8px monospace'; ctx.textBaseline='top';
-    const msg='WASD/Pfeile: laufen · E: reden · I: Menü';
+    const msg='WASD · E: reden · I: Menü · B: Brille · F: Lampe · R: Rad';
     const w=ctx.measureText(msg).width;
     ctx.fillStyle='rgba(30,25,40,0.6)'; ctx.fillRect(GAME_W/2-w/2-5,GAME_H-17,w+10,13);
     ctx.fillStyle='#fdf3dc'; ctx.fillText(msg,GAME_W/2-w/2,GAME_H-14);
@@ -1826,6 +4345,9 @@ addEventListener('keydown', e=>{
   keys[k]=true;
   if(k==='e'||k===' '||k==='enter') interactQueued=true;
   if(k==='i'||k==='escape') escQueued=true;
+  if(k==='b' && !state.dialog && !state.cutscene && !state.menu){ toggleGlasses(); state.idleSince=0; }
+  if(k==='f' && !state.dialog && !state.cutscene && !state.menu){ toggleLamp(); state.idleSince=0; }
+  if(k==='r' && !state.dialog && !state.cutscene && !state.menu){ toggleBike(); state.idleSince=0; }
 });
 addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
 
@@ -1933,17 +4455,23 @@ function drawTouchButton(){
 
 /* --- Start --- */
 buildWorld();
+buildStage();
 addNPC('harvey','Harvey',120,116,HARVEY_PAL,HARVEY_GRIDS,PORTRAIT_HARVEY,PORTRAIT_HARVEY_PAL,harveyTalk);
 addNPC('friend','???',588,468,FRIEND_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
+addNPC('kobi','Kobi',632,86,KOBI_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_KOBI_PAL,kobiTalk);
+addNPC('tomas','Tomás',604,90,TOMAS_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_TOMAS_PAL,tomasTalk);
+addNPC('momo','Momo',252,432,MOMO_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_MOMO_PAL,momoTalk);
+addNPC('kip','Kip',312,428,KIP_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_KIP_PAL,kipTalk);
 player.pal=playerPal();
 fitCanvas();
-// Alten Spielstand aus der Vor-Slot-Version einmalig in Slot 1 übernehmen
+// Spielstände aus der Zeit übernehmen, als das Spiel noch anders hieß
 try {
-  const legacy = localStorage.getItem('festivalfieber_save');
-  if(legacy){
-    if(!localStorage.getItem(slotKey(1))) localStorage.setItem(slotKey(1), legacy);
-    localStorage.removeItem('festivalfieber_save');
+  for(let n=1;n<=SAVE_SLOTS;n++){
+    const alt = localStorage.getItem('festivalfieber_save_'+n);
+    if(alt && !localStorage.getItem(slotKey(n))) localStorage.setItem(slotKey(n), alt);
   }
+  const legacy = localStorage.getItem('festivalfieber_save');
+  if(legacy && !localStorage.getItem(slotKey(1))) localStorage.setItem(slotKey(1), legacy);
 } catch(err) {}
 // Das Spiel startet immer mit der Slot-Auswahl
 state.mode='title';
