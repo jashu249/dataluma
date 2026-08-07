@@ -1170,7 +1170,8 @@ function sceneSolids(){
 
 function moveEntity(e, dx, dy, ignoreNpcs){
   const blockers = sceneSolids();
-  if(!ignoreNpcs && state.scene!=='tent'){
+  // Die Leute vom Campingplatz stehen nur dort im Weg, nicht auf anderen Karten
+  if(!ignoreNpcs && state.scene==='camp'){
     for(const n of npcs){ if(n!==e) blockers.push(entBox(n)); }
     if(e!==player) blockers.push(entBox(player));
   }
@@ -1561,7 +1562,8 @@ function buildStage(){
   stageSolids.push({x:7*TILE, y:7*TILE+8, w:26, h:12});
 
   // --- Schilder und der Weg zurück ---
-  addStageSign(18,26,'Zurück zum Campingplatz (Süden)');
+  addStageGate(20,27);
+  addStageSign(16,26,'Zurück zum Campingplatz (Süden)');
   addStageSign(12,11,'Backstage – nur mit Bändchen');
 
   // --- Crew ---
@@ -1592,13 +1594,35 @@ function addStageSign(tx,ty,text){
 function addStageLightSrc(x,y,r,col,s,flicker){
   stageLights.push({ x, y, r, col, s, flicker, seed:Math.random()*100 });
 }
+// Das Tor zurück zum Campingplatz, unten am Südausgang
+function addStageGate(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  stageObjects.push({ type:'backGate', x, base, label:'Zum Campingplatz',
+    ax:x, ay:base, talk:()=>leaveStage() });
+}
+function drawBackGate(o){
+  ctx.fillStyle='rgba(20,16,30,0.20)'; ctx.fillRect(o.x-22,o.base-3,44,4);
+  ctx.fillStyle='#6a5340';                                        // Pfosten
+  ctx.fillRect(o.x-22,o.base-40,7,40); ctx.fillRect(o.x+15,o.base-40,7,40);
+  ctx.fillStyle='#7d6349'; ctx.fillRect(o.x-22,o.base-40,3,40); ctx.fillRect(o.x+15,o.base-40,3,40);
+  ctx.fillStyle='#3b3547'; ctx.fillRect(o.x-24,o.base-46,48,8);   // Querbalken
+  ctx.fillStyle='#4a4358'; ctx.fillRect(o.x-24,o.base-46,48,3);
+  ctx.fillStyle='#e8c46a'; ctx.font='bold 6px monospace'; ctx.textBaseline='top';
+  ctx.fillText('CAMPING', o.x-16, o.base-45);
+  // Pfeil nach unten: hier geht es raus
+  ctx.fillStyle='#9cc97e';
+  ctx.fillRect(o.x-2,o.base-34,4,8);
+  ctx.fillRect(o.x-5,o.base-27,10,2);
+  ctx.fillRect(o.x-3,o.base-25,6,2);
+  ctx.fillRect(o.x-1,o.base-23,2,2);
+}
 
 /* --- Zwischen Campingplatz und Gelände wechseln --- */
 const CAMP_GATE = { x:25*TILE+8, y:4*TILE+14 };     // direkt unter dem Tor
 function enterStage(){
   fadeTo(()=>{
     state.scene = 'stage';
-    player.x = 20*TILE; player.y = STAGE.H*TILE-28;   // unten am Eingang
+    player.x = 20*TILE; player.y = STAGE.H*TILE-52;   // ein Stück oberhalb des Ausgangs
     player.facing = 'up';
     if(!state.flags.stageSeen){
       state.flags.stageSeen = true;
@@ -1677,6 +1701,7 @@ function drawCrate(o){
 }
 function drawStageObject(o){
   switch(o.type){
+    case 'backGate':      drawBackGate(o); break;
     case 'fence':         drawFence(o); break;
     case 'stagePlatform': drawStagePlatform(o); break;
     case 'speaker':       drawSpeaker(o); break;
@@ -4052,6 +4077,12 @@ function update(dt){
   if(state.scene==='tent'){
     playerUpdate(dt);
     statusUpdate(dt);
+    // Wer durch die Zeltöffnung nach unten läuft, steht wieder draußen
+    if(player.y > TENT.H - 4 && player.x > 70 && player.x < 120){
+      leaveTent();
+      interactQueued=false;
+      return;
+    }
     findCandidate();
     if(interactQueued){ interactQueued=false; tryInteract(); }
     return;
@@ -4061,6 +4092,12 @@ function update(dt){
     playerUpdate(dt);
     statusUpdate(dt);
     particlesUpdate(dt);
+    // Wer unten durch die Lücke läuft, geht zurück zum Campingplatz
+    if(player.y > STAGE.H*TILE - 22 && player.x > 17*TILE && player.x < 23*TILE){
+      leaveStage();
+      interactQueued=false;
+      return;
+    }
     findCandidate();
     if(interactQueued){ interactQueued=false; tryInteract(); }
     return;
