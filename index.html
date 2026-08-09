@@ -92,7 +92,10 @@ const DEFAULT_SYMPATHY = [
   { id:'kobi',   name:'???',    val: 0 },
   { id:'tomas',  name:'???',    val: 0 },
   { id:'vera',   name:'???',    val: 0 },
-  { id:'rocco',  name:'???',    val: 0 }
+  { id:'rocco',  name:'???',    val: 0 },
+  { id:'kaffee0', name:'Nuri',  val: -2 },
+  { id:'kaffee1', name:'Pelle', val: -2 },
+  { id:'kaffee2', name:'Sam',   val: -3 }
 ];
 const state = {
   mode: 'create',            // 'title' (Slot-Auswahl), 'create' (Charaktererstellung) oder 'game'
@@ -614,6 +617,55 @@ const CHAT_ICONS = {
     ctx.fillRect(x+1,y+2,2,2); ctx.fillRect(x+6,y+2,2,2);   // Ohren
     ctx.fillStyle='#241d26'; ctx.fillRect(x+3,y+4,1,1); ctx.fillRect(x+5,y+4,1,1);
   },
+  kuh(x,y){
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+1,y+3,7,5);            // Körper
+    ctx.fillStyle='#3b332c'; ctx.fillRect(x+2,y+4,2,2); ctx.fillRect(x+5,y+6,2,2);  // Flecken
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+7,y+1,2,3);            // Kopf
+    ctx.fillStyle='#3b332c'; ctx.fillRect(x+6,y+1,1,1); ctx.fillRect(x+9,y+1,1,1);  // Hörner
+    ctx.fillStyle='#c98a8a'; ctx.fillRect(x+7,y+3,2,1);
+  },
+  kuhDurch(x,y){
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+1,y+3,7,5);
+    ctx.fillStyle='#3b332c'; ctx.fillRect(x+2,y+4,2,2); ctx.fillRect(x+5,y+6,2,2);
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+7,y+1,2,3);
+    ctx.fillStyle='#3b332c'; ctx.fillRect(x+6,y+1,1,1); ctx.fillRect(x+9,y+1,1,1);
+    ctx.fillStyle='#c9402f';                                        // Verbotsstrich
+    for(let i=0;i<9;i++) ctx.fillRect(x+i, y+8-i, 2, 2);
+  },
+  tasse(x,y){
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+1,y+3,7,6);
+    ctx.fillStyle='#6d4a2f'; ctx.fillRect(x+2,y+4,5,3);            // Kaffee
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+8,y+4,2,3);            // Henkel
+    ctx.fillStyle='#b0b0b8'; ctx.fillRect(x+3,y+1,1,2); ctx.fillRect(x+5,y,1,3);   // Dampf
+  },
+  zucker(x,y){
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+1,y+2,8,6);
+    ctx.fillStyle='#c9c1ae'; ctx.fillRect(x+1,y+2,8,1);
+    ctx.fillStyle='#8a8378'; ctx.fillRect(x+3,y+4,4,1); ctx.fillRect(x+3,y+6,4,1);
+  },
+  geld(x,y){
+    ctx.fillStyle='#c9a03f'; ctx.fillRect(x+1,y+2,7,7);            // Münze
+    ctx.fillStyle='#e8c46a'; ctx.fillRect(x+2,y+3,5,5);
+    ctx.fillStyle='#8a6a2b'; ctx.fillRect(x+4,y+4,1,3); ctx.fillRect(x+3,y+5,3,1);
+    ctx.fillStyle='#a8842f'; ctx.fillRect(x+7,y+5,3,4);            // zweite dahinter
+  },
+  karte(x,y){
+    ctx.fillStyle='#3f6f8a'; ctx.fillRect(x+1,y+3,10,6);
+    ctx.fillStyle='#5290ad'; ctx.fillRect(x+1,y+3,10,2);
+    ctx.fillStyle='#e8c46a'; ctx.fillRect(x+2,y+6,3,2);            // Chip
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+7,y+7,3,1);
+  },
+  doppelt(x,y){
+    ctx.fillStyle='#6d4a2f';
+    ctx.fillRect(x+1,y+3,4,6); ctx.fillRect(x+6,y+3,4,6);          // zwei Tassen
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+1,y+2,4,2); ctx.fillRect(x+6,y+2,4,2);
+    ctx.fillStyle='#b0b0b8'; ctx.fillRect(x+2,y,1,2); ctx.fillRect(x+7,y,1,2);
+  },
+  daumen(x,y){
+    ctx.fillStyle='#e0b088'; ctx.fillRect(x+2,y+4,6,5);            // Faust
+    ctx.fillRect(x+4,y+1,2,3);                                     // Daumen hoch
+    ctx.fillStyle='#c08e66'; ctx.fillRect(x+2,y+6,6,1);
+  },
   // --- Reaktionen ---
   herz(x,y){
     ctx.fillStyle='#e0518a';
@@ -780,9 +832,9 @@ const TENT_COLORS = {
   pink:   {c1:'#d4709b', c1b:'#e894b5', c2:'#a84f74'}
 };
 function addTent(tx,ty,colors,text,label){
-  const x=tx*TILE, y=ty*TILE, w=64, h=44;
+  const x=tx*TILE, y=ty*TILE, w=34, h=25;      // klein und knuffig, nicht maßstabsgetreu
   objects.push({ type:'tent', x, y, w, h, col:colors, text, label,
-    base:y+h, solid:{x:x+4, y:y+16, w:w-8, h:h-16}, ax:x+w/2, ay:y+h });
+    base:y+h, solid:{x:x+3, y:y+9, w:w-6, h:h-9}, ax:x+w/2, ay:y+h });
 }
 function addTree(tx,ty){
   const x=tx*TILE+8, base=(ty+1)*TILE;
@@ -870,7 +922,7 @@ function buildWorld(){
   addSign(26,16,'Dixi-Klos. Bitte sauber halten!');
   addSign(24,19,'Süden: weitere Camps');
   // Stellas Camp (Südosten)
-  addTent(33,24, TENT_COLORS.gelb,  'Ein sonnengelbes Zelt. Es wirkt seltsam vertraut...', 'Zelt');
+  addTent(33,22, TENT_COLORS.gelb,  'Ein sonnengelbes Zelt. Es wirkt seltsam vertraut...', 'Zelt');
   addTent(37,26, TENT_COLORS.gruen, 'Vor dem Zelt liegen Girlanden und Werkzeug verstreut.', 'Zelt');
   addFire(35,29,true);
   addSign(32,27,'Camp "Sonnenblume"');
@@ -882,8 +934,35 @@ function buildWorld(){
   addToolbox(19,25);
   addGate(25,3);
   addBike(7,5);
+  addFoodGateCamp(40,30);
   addWoodpile(8,28);
   addSign(6,26,'Materiallager – Bretter, Gitter, Kabel');
+  // --- Viele kleine Camps über die Wiese verteilt ---
+  const nachbarZelte = [
+    [15,4,'gelb'],  [19,3,'tuerkis'], [22,5,'pink'],   [28,4,'lila'],
+    [31,6,'koralle'],[35,3,'gruen'],  [34,7,'gelb'],
+    [3,13,'gruen'], [3,17,'pink'],    [7,16,'lila'],   [3,21,'tuerkis'],
+    [7,23,'gelb'],  [29,17,'koralle'],[33,18,'gelb'],  [37,20,'lila'],
+    [29,21,'gruen'],[38,16,'pink'],   [15,29,'tuerkis'],[19,30,'koralle'],
+    [23,29,'lila'], [28,30,'gelb'],   [35,30,'gruen'],  [10,30,'pink']
+  ];
+  const nachbarText = [
+    'Ein kleines Zelt. Davor stehen zwei leere Klappstühle.',
+    'Vor dem Zelt hängt Wäsche an einer Leine.',
+    'Zzzzz... Hier schläft noch jemand.',
+    'An der Zeltstange klebt ein handgemaltes Schild: "BITTE LEISE".',
+    'Ein Zelt mit einer kleinen Solarleuchte davor.',
+    'Vor dem Eingang steht eine Kühlbox. Sie ist abgeschlossen.',
+    'Jemand hat Wimpel zwischen den Heringen gespannt.',
+    'Ein sehr ordentlich aufgebautes Zelt. Verdächtig ordentlich.'
+  ];
+  nachbarZelte.forEach((z,i)=>{
+    addTent(z[0], z[1], TENT_COLORS[z[2]], nachbarText[i%nachbarText.length], 'Zelt');
+  });
+  // ein paar zusätzliche Feuerstellen, damit die Camps wie Camps wirken
+  addFire(21,4,true); addFire(30,5,true); addFire(5,19,true);
+  addFire(32,20,true); addFire(21,30,true); addFire(36,31,true);
+
   // verstreute Bäume & Büsche (abseits der Wege)
   [[18,5],[21,18],[16,22],[33,10],[38,7],[8,18],[12,26],[30,20],[36,19],[20,29],[6,22],[40,15]]
     .forEach(p=>addTree(p[0],p[1]));
@@ -951,19 +1030,19 @@ function drawTent(o){
   ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(o.x+4,o.base-3,o.w-8,4);
   for(let i=0;i<o.h;i++){
     const half=Math.max(2, Math.round((i/o.h)*(o.w/2)));
-    ctx.fillStyle = (Math.floor(i/6)%2===0) ? o.col.c1 : o.col.c1b;  // Streifen
+    ctx.fillStyle = (Math.floor(i/4)%2===0) ? o.col.c1 : o.col.c1b;  // Streifen
     ctx.fillRect(cx-half, o.y+i, half*2, 1);
     ctx.fillStyle=o.col.c2;
     ctx.fillRect(cx-half, o.y+i, 1, 1); ctx.fillRect(cx+half-1, o.y+i, 1, 1);
   }
   // Eingang
-  const dh=16;
+  const dh=Math.round(o.h*0.45);
   for(let j=0;j<dh;j++){
-    const hw=Math.max(1, Math.round((j/dh)*6));
+    const hw=Math.max(1, Math.round((j/dh)*(o.w*0.16)));
     ctx.fillStyle='#3b2f2f';
     ctx.fillRect(cx-hw, o.y+o.h-dh+j, hw*2, 1);
   }
-  ctx.fillStyle='#e8e0d0'; ctx.fillRect(cx-1, o.y, 2, 3);  // Zeltspitze
+  ctx.fillStyle='#e8e0d0'; ctx.fillRect(cx-1, o.y, 2, 2);  // Zeltspitze
 }
 function drawTree(o){
   ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(o.x-7,o.base-2,14,3);
@@ -1131,6 +1210,7 @@ function drawObject(o){
     case 'toolbox': drawToolbox(o); break;
     case 'woodpile': drawWoodpile(o); break;
     case 'gate':    drawGate(o); break;
+    case 'foodGate': drawFoodGateCamp(o); break;
     case 'bike':    drawBike(o); break;
     case 'lantern': drawLantern(o); break;
     case 'tent':    drawTent(o); break;
@@ -1165,6 +1245,8 @@ function sceneSolids(){
   if(state.scene==='tent')  return tentSolids.slice();
   if(state.scene==='stage')
     return state.flags.backstageOpen ? stageSolids.filter(s=>!s.gate) : stageSolids.slice();
+  if(state.scene==='food')  return foodSolids.slice();
+  if(state.scene==='wald')  return waldSolids.slice();
   return solids.concat(borderWalls);
 }
 
@@ -1608,7 +1690,8 @@ function drawBackGate(o){
   ctx.fillStyle='#3b3547'; ctx.fillRect(o.x-24,o.base-46,48,8);   // Querbalken
   ctx.fillStyle='#4a4358'; ctx.fillRect(o.x-24,o.base-46,48,3);
   ctx.fillStyle='#e8c46a'; ctx.font='bold 6px monospace'; ctx.textBaseline='top';
-  ctx.fillText('CAMPING', o.x-16, o.base-45);
+  const bez = o.beschriftung || 'CAMPING';
+  ctx.fillText(bez, o.x - ctx.measureText(bez).width/2, o.base-45);
   // Pfeil nach unten: hier geht es raus
   ctx.fillStyle='#9cc97e';
   ctx.fillRect(o.x-2,o.base-34,4,8);
@@ -1744,6 +1827,27 @@ function drawStage(){
   drawFade();
 }
 
+// Das Tor zum Foodcourt, unten rechts auf dem Campingplatz
+function addFoodGateCamp(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'foodGate', x, base, label:'Zum Foodcourt',
+    ax:x, ay:base, solid:null, talk:()=>enterFood() });
+}
+function drawFoodGateCamp(o){
+  ctx.fillStyle='rgba(40,32,24,0.20)'; ctx.fillRect(o.x-20,o.base-3,40,4);
+  ctx.fillStyle='#6a5340';
+  ctx.fillRect(o.x-20,o.base-38,6,38); ctx.fillRect(o.x+14,o.base-38,6,38);
+  ctx.fillStyle='#7d6349'; ctx.fillRect(o.x-20,o.base-38,3,38); ctx.fillRect(o.x+14,o.base-38,3,38);
+  ctx.fillStyle='#3b3547'; ctx.fillRect(o.x-22,o.base-44,44,8);
+  ctx.fillStyle='#4a4358'; ctx.fillRect(o.x-22,o.base-44,44,3);
+  ctx.fillStyle='#e8c46a'; ctx.font='bold 6px monospace'; ctx.textBaseline='top';
+  ctx.fillText('FOOD', o.x-9, o.base-43);
+  // Kleine Pommestüte als Wegweiser
+  ctx.fillStyle='#c9402f'; ctx.fillRect(o.x-4, o.base-32, 9, 8);
+  ctx.fillStyle='#e8c46a';
+  ctx.fillRect(o.x-3,o.base-37,2,6); ctx.fillRect(o.x,o.base-36,2,5); ctx.fillRect(o.x+3,o.base-35,2,4);
+}
+
 // Veras Werkzeugkiste steht bei Momo im Camp
 function addToolbox(tx,ty){
   const x=tx*TILE+8, base=(ty+1)*TILE;
@@ -1850,8 +1954,1126 @@ function woodTalk(){
   }
   startDialog('woodTake1', {breakable:true});
 }
+/* ============ DER FOODCOURT ============
+   Vierter Schauplatz. Man kommt von links herein, läuft an den Ständen
+   nach rechts und dann nach Norden hoch zur zweiten Bühne. */
+const FOOD = { W:34, H:32 };
+const foodObjects = [];
+const foodSolids  = [];
+const foodLights  = [];
+let foodGround = null;
+
+// Wo überall gelaufen wird: der waagerechte Gang und der Weg nach oben
+const FOOD_PATHS = [
+  [2, 22, 15, 6],    // kurzer Gang von links herein
+  [12, 2, 8, 26]     // die lange Kante nach Norden – hier stehen die Stände
+];
+function foodIsPath(tx,ty){
+  return FOOD_PATHS.some(r => tx>=r[0] && tx<r[0]+r[2] && ty>=r[1] && ty<r[1]+r[3]);
+}
+function buildFoodGround(){
+  foodGround = document.createElement('canvas');
+  foodGround.width = FOOD.W*TILE; foodGround.height = FOOD.H*TILE;
+  const g = foodGround.getContext('2d');
+  const rnd = mulberry32(9182);
+  for(let ty=0; ty<FOOD.H; ty++){
+    for(let tx=0; tx<FOOD.W; tx++){
+      const weg = foodIsPath(tx,ty);
+      g.fillStyle = weg ? '#c7b183' : '#a3cf6b';
+      g.fillRect(tx*TILE, ty*TILE, TILE, TILE);
+      for(let i=0;i<5;i++){
+        const px = tx*TILE + Math.floor(rnd()*15);
+        const py = ty*TILE + Math.floor(rnd()*15);
+        g.fillStyle = weg ? (rnd()<0.5?'#b39f74':'#d6c295') : (rnd()<0.5?'#94c15c':'#b2da7b');
+        g.fillRect(px,py,1,1);
+      }
+      // Auf dem Gang liegen Becher und Servietten herum
+      if(weg && rnd()<0.07){
+        const px=tx*TILE+3+Math.floor(rnd()*10), py=ty*TILE+3+Math.floor(rnd()*10);
+        g.fillStyle = rnd()<0.5 ? '#e8e0d0' : '#d9b48a';
+        g.fillRect(px,py,2,2);
+      }
+    }
+  }
+}
+
+function addFoodTree(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  foodObjects.push({ type:'tree', x, base, sway:Math.random()*6.28 });
+  foodSolids.push({x:x-5, y:base-6, w:10, h:6});
+}
+// Ein Essensstand: Tresen, Dach und ein kleines Bild von dem, was es gibt
+function addStall(tx,ty,col,name,gericht,text){
+  const x=tx*TILE, y=ty*TILE, w=48, h=38;
+  foodObjects.push({ type:'stall', x, y, w, h, base:y+h, col, name, gericht, text,
+    label:name, ax:x+w/2, ay:y+h });
+  foodSolids.push({x:x+2, y:y+14, w:w-4, h:h-14});
+}
+// Sitzgruppe: Tisch mit zwei Bänken
+function addPicnic(tx,ty){
+  const x=tx*TILE, base=ty*TILE+26;
+  foodObjects.push({ type:'picnic', x, base, label:'Sitzbank',
+    ax:x+18, ay:base, text:'Ein Biertisch mit zwei Bänken. Jemand hat "DL 26" in die Platte geritzt.' });
+  foodSolids.push({x:x+2, y:base-12, w:32, h:12});
+}
+
+function buildFood(){
+  foodObjects.length=0; foodSolids.length=0; foodLights.length=0;
+  buildFoodGround();
+  const W=FOOD.W*TILE, H=FOOD.H*TILE;
+  // Kartenränder – links unten bleibt der Weg zurück zum Campingplatz frei
+  foodSolids.push({x:0, y:0, w:12*TILE, h:20});
+  foodSolids.push({x:20*TILE, y:0, w:W-20*TILE, h:20});
+  foodSolids.push({x:0, y:H-24, w:W, h:24});
+  foodSolids.push({x:0, y:0, w:24, h:22*TILE});
+  foodSolids.push({x:0, y:28*TILE, w:24, h:H-28*TILE});
+  foodSolids.push({x:W-24, y:0, w:24, h:H});
+  // Baumreihen als Rand
+  for(let x=1;x<12;x+=2) addFoodTree(x,1);
+  for(let x=21;x<33;x+=2) addFoodTree(x,1);
+  for(let x=1;x<33;x+=2) addFoodTree(x,30);
+  for(let y=3;y<30;y+=2) addFoodTree(32,y);
+  for(let y=3;y<21;y+=2) addFoodTree(1,y);
+  for(let y=29;y<31;y+=2) addFoodTree(1,y);
+  for(let y=4;y<20;y+=3) addFoodTree(25,y);
+  for(let y=5;y<15;y+=4) addFoodTree(5,y);
+
+  // --- Der Café-Van am Knick, mit Blick auf den Gang ---
+  foodObjects.push({ type:'van', x:5*TILE, y:19*TILE, w:78, h:52, base:19*TILE+52,
+    ax:5*TILE+39, ay:19*TILE+52, label:'Café-Van',
+    talk:()=>vanTalk() });
+  foodSolids.push({x:5*TILE+2, y:19*TILE+18, w:74, h:34});
+
+  // --- Die Stände säumen die lange Kante nach oben, links und rechts ---
+  addStall(9,16,  '#5f9b6a', 'Spinatknödel', 'knoedel',
+    'Handgemachte Spinatknödel mit brauner Butter. Die Frau am Tresen nickt dir zu, ohne aufzuhören zu formen.');
+  addStall(20,12, '#d9a03f', 'Pommes', 'pommes',
+    'Eine Fritteuse, zwei Körbe, eine sehr lange Schlange. Der Geruch zieht über den halben Platz.');
+  addStall(9,9,   '#c9603f', 'Langos', 'langos',
+    'Teigfladen im heißen Fett, danach Knoblauchwasser, Sauerrahm und Käse. Klassiker.');
+
+  // --- Sitzbereich südlich vom unteren Gang ---
+  addPicnic(3,27); addPicnic(7,27); addPicnic(11,27);
+  addPicnic(5,28); addPicnic(9,28);
+
+  // --- Schilder und Tore ---
+  addFoodSign(2,28,'Foodcourt');
+  addFoodSign(16,20,'Waldbühne – die Kante hoch');
+  addFoodGate(2,25);
+  addWaldGate(15,2);
+  addKuehlwagen(22,24);
+
+  // --- Licht: Lichterketten über dem Gang, Neon an den Ständen ---
+  for(let i=0;i<3;i++) addFoodLight(4*TILE+i*72, 21*TILE+8, 46, '255,190,110', 0.7, 'twinkle');
+  for(let i=0;i<5;i++) addFoodLight(16*TILE, 5*TILE+i*80, 52, '255,200,140', 0.6, 'twinkle');
+  addFoodLight(5*TILE+39, 19*TILE+36, 74, '255,220,150', 0.85, 'hum');   // Van
+  addFoodLight(11*TILE, 17*TILE+30, 54, '150,255,170', 0.7, 'hum');
+  addFoodLight(22*TILE, 13*TILE+30, 54, '255,215,120', 0.7, 'hum');
+  addFoodLight(11*TILE, 10*TILE+30, 54, '255,150,110', 0.7, 'hum');
+  addFoodLight(8*TILE, 28*TILE, 66, '255,200,140', 0.5, 'twinkle');      // Sitzbereich
+  addFoodLight(16*TILE, 3*TILE, 70, '200,255,220', 0.7, 'hum');          // Ausgang oben
+}
+/* ============ DIE WALDBÜHNE ============
+   Eigene Karte am oberen Ende des Foodcourts. Eine Lichtung im Wald,
+   deutlich ruhiger als die Mainstage. */
+const WALD = { W:28, H:22 };
+const waldObjects = [];
+const waldSolids  = [];
+const waldLights  = [];
+let waldGround = null;
+
+function buildWaldGround(){
+  waldGround = document.createElement('canvas');
+  waldGround.width = WALD.W*TILE; waldGround.height = WALD.H*TILE;
+  const g = waldGround.getContext('2d');
+  const rnd = mulberry32(3377);
+  for(let ty=0; ty<WALD.H; ty++){
+    for(let tx=0; tx<WALD.W; tx++){
+      // Vor der Bühne ist das Gras zertreten, außen herum Waldboden
+      const platz = (ty>=8 && ty<=18 && tx>=5 && tx<=22);
+      g.fillStyle = platz ? '#9cbf6a' : '#7ea658';
+      g.fillRect(tx*TILE, ty*TILE, TILE, TILE);
+      for(let i=0;i<5;i++){
+        const px = tx*TILE + Math.floor(rnd()*15);
+        const py = ty*TILE + Math.floor(rnd()*15);
+        g.fillStyle = platz ? (rnd()<0.5?'#8fb35e':'#accf7a') : (rnd()<0.5?'#6f9550':'#8cb566');
+        g.fillRect(px,py,1,1);
+      }
+      // Laub und kleine Zweige auf dem Waldboden
+      if(!platz && rnd()<0.09){
+        const px=tx*TILE+3+Math.floor(rnd()*10), py=ty*TILE+3+Math.floor(rnd()*10);
+        g.fillStyle = rnd()<0.5 ? '#8a6a44' : '#a8894f';
+        g.fillRect(px,py,2,1);
+      }
+    }
+  }
+}
+function addWaldTree(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  waldObjects.push({ type:'tree', x, base, sway:Math.random()*6.28 });
+  waldSolids.push({x:x-5, y:base-6, w:10, h:6});
+}
+function addBlanket(tx,ty,col){
+  const x=tx*TILE, base=ty*TILE+16;
+  waldObjects.push({ type:'blanket', x, base, col, label:'Decke',
+    ax:x+16, ay:base, text:'Eine ausgebreitete Picknickdecke. Jemand hat den Platz schon reserviert.' });
+}
+function buildWald(){
+  waldObjects.length=0; waldSolids.length=0; waldLights.length=0;
+  buildWaldGround();
+  const W=WALD.W*TILE, H=WALD.H*TILE;
+  // Ränder – unten in der Mitte bleibt der Weg zurück zum Foodcourt frei
+  waldSolids.push({x:0, y:0, w:W, h:24});
+  waldSolids.push({x:0, y:H-20, w:10*TILE, h:20});
+  waldSolids.push({x:18*TILE, y:H-20, w:W-18*TILE, h:20});
+  waldSolids.push({x:0, y:0, w:24, h:H});
+  waldSolids.push({x:W-24, y:0, w:24, h:H});
+  // Dichter Wald ringsum
+  for(let x=1;x<27;x+=2) addWaldTree(x,1);
+  for(let y=3;y<21;y+=2){ addWaldTree(1,y); addWaldTree(26,y); }
+  for(let x=1;x<10;x+=2) addWaldTree(x,20);
+  for(let x=19;x<27;x+=2) addWaldTree(x,20);
+  // ein paar Bäume mitten auf der Lichtung, für Schatten
+  addWaldTree(4,12); addWaldTree(23,10); addWaldTree(3,17); addWaldTree(24,16);
+
+  // --- Die Bühne selbst ---
+  waldObjects.push({ type:'waldStage', x:7*TILE, y:3*TILE, w:14*TILE, h:5*TILE,
+    base:8*TILE, ax:14*TILE, ay:8*TILE, label:'Waldbühne',
+    text:'Eine kleine Bühne aus Holz, zwischen die Bäume gebaut. Hier spielt später etwas Leiseres.' });
+  waldSolids.push({x:7*TILE, y:3*TILE, w:14*TILE, h:5*TILE});
+  // Boxen links und rechts
+  for(const bx of [6,21]){
+    waldObjects.push({ type:'speaker', x:bx*TILE, y:5*TILE, w:TILE, h:3*TILE, base:8*TILE,
+      ax:bx*TILE+8, ay:8*TILE, label:'Box', text:'Eine einzelne Box auf einem Stativ. Reicht für diese Größe völlig.' });
+    waldSolids.push({x:bx*TILE, y:5*TILE, w:TILE, h:3*TILE});
+  }
+  // Decken auf der Wiese
+  addBlanket(9,11,'#c94f6f'); addBlanket(14,12,'#4a8f9b');
+  addBlanket(18,11,'#d9a03f'); addBlanket(11,15,'#7b5fc9');
+  addBlanket(16,16,'#5f9b6a');
+  // Schild und Rückweg
+  addWaldSign(11,18,'Zurück zum Foodcourt (Süden)');
+  addFoodGateWald(14,19);
+  // Licht: warm und sparsam
+  waldLights.push({x:10*TILE, y:4*TILE, r:90, col:'255,190,120', s:0.7, flicker:'hum', seed:1});
+  waldLights.push({x:18*TILE, y:4*TILE, r:90, col:'180,220,255', s:0.7, flicker:'hum', seed:2});
+  waldLights.push({x:14*TILE, y:7*TILE, r:110, col:'255,210,150', s:0.6, flicker:'sweep', seed:3});
+  for(let i=0;i<5;i++)
+    waldLights.push({x:7*TILE+i*56, y:9*TILE, r:44, col:'255,200,140', s:0.5, flicker:'twinkle', seed:10+i});
+  waldLights.push({x:14*TILE, y:18*TILE, r:64, col:'255,190,110', s:0.6, flicker:'hum', seed:20});
+}
+function addWaldSign(tx,ty,text){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  waldObjects.push({ type:'sign', x, base, text, label:'Schild', ax:x, ay:base });
+  waldSolids.push({x:x-6, y:base-4, w:12, h:4});
+}
+function addFoodGateWald(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  waldObjects.push({ type:'backGate', x, base, label:'Zum Foodcourt',
+    beschriftung:'FOOD', ax:x, ay:base, talk:()=>leaveWald() });
+}
+// Tor im Foodcourt, oben am Ende der Kante
+function addWaldGate(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  foodObjects.push({ type:'waldGate', x, base, label:'Zur Waldbühne',
+    ax:x, ay:base, talk:()=>enterWald() });
+}
+function enterWald(){
+  fadeTo(()=>{
+    state.scene = 'wald';
+    player.x = 14*TILE; player.y = WALD.H*TILE-46;
+    player.facing = 'up';
+    if(!state.flags.waldSeen){
+      state.flags.waldSeen = true;
+      state.journal.memories.push('Die Waldbühne liegt oben hinter dem Foodcourt.');
+    }
+  });
+}
+function leaveWald(){
+  fadeTo(()=>{
+    state.scene = 'food';
+    schlangeNeuAufstellen();
+    player.x = 15*TILE+8; player.y = 4*TILE;
+    player.facing = 'down';
+  });
+}
+function drawWaldStage(o){
+  ctx.fillStyle='rgba(20,16,30,0.26)'; ctx.fillRect(o.x-3, o.base-5, o.w+6, 7);
+  ctx.fillStyle='#3a4a3d'; ctx.fillRect(o.x, o.y, o.w, o.h);
+  ctx.fillStyle='#2e3b31';
+  for(let x=o.x+5; x<o.x+o.w; x+=13) ctx.fillRect(x, o.y+8, 3, o.h-26);
+  ctx.fillStyle='#4c6152'; ctx.fillRect(o.x, o.y, o.w, 9);
+  ctx.fillStyle='#5f7a66'; ctx.fillRect(o.x+2, o.y+2, o.w-4, 3);
+  ctx.fillStyle='#6a5340'; ctx.fillRect(o.x+6, o.base-20, o.w-12, 20);
+  ctx.fillStyle='#7d6349'; ctx.fillRect(o.x+8, o.base-18, o.w-16, 16);
+  ctx.fillStyle='#5a4636';
+  for(let x=o.x+12; x<o.x+o.w-12; x+=12) ctx.fillRect(x, o.base-18, 1, 16);
+  ctx.fillStyle='#4a8f6a'; ctx.fillRect(o.x+26, o.y+12, o.w-52, 16);
+  ctx.fillStyle='#6bbd8c'; ctx.fillRect(o.x+28, o.y+14, o.w-56, 12);
+  ctx.fillStyle='#fdf3dc'; ctx.font='bold 8px monospace'; ctx.textBaseline='top';
+  ctx.fillText('WALDBÜHNE', o.x+o.w/2-24, o.y+16);
+  const d=darkness();
+  const cols=['#ff8a5a','#ffd25a','#8affaa','#8ac8ff','#e88aff'];
+  for(let i=0;i<8;i++){
+    ctx.fillStyle = d>0.2 ? cols[i%5] : '#9c9c9c';
+    ctx.fillRect(o.x+10+i*((o.w-20)/7), o.y+9, 3, 3);
+  }
+}
+function drawBlanket(o){
+  ctx.fillStyle=o.col; ctx.fillRect(o.x, o.base-12, 32, 14);
+  ctx.fillStyle='rgba(255,255,255,0.22)';
+  for(let i=0;i<4;i++) ctx.fillRect(o.x+2+i*8, o.base-12, 3, 14);
+  ctx.fillStyle='rgba(0,0,0,0.16)'; ctx.fillRect(o.x, o.base+1, 32, 2);
+  // ein Rucksack als Platzhalter
+  ctx.fillStyle='#4a6a4a'; ctx.fillRect(o.x+22, o.base-10, 8, 8);
+  ctx.fillStyle='#3b5540'; ctx.fillRect(o.x+23, o.base-12, 6, 3);
+}
+function drawWaldObject(o){
+  switch(o.type){
+    case 'waldStage': drawWaldStage(o); break;
+    case 'blanket':   drawBlanket(o); break;
+    case 'speaker':   drawSpeaker(o); break;
+    case 'backGate':  drawBackGate(o); break;
+    case 'tree':      drawTree(o); break;
+    case 'sign':      drawSign(o); break;
+  }
+}
+function drawWald(){
+  camX=clamp(Math.round(player.x-GAME_W/2), 0, WALD.W*TILE-GAME_W);
+  camY=clamp(Math.round(player.y-GAME_H/2-10), 0, WALD.H*TILE-GAME_H);
+  ctx.save();
+  ctx.translate(-camX,-camY);
+  ctx.drawImage(waldGround,0,0);
+  const list=[];
+  for(const o of waldObjects) list.push({y:o.base, f:()=>drawWaldObject(o)});
+  list.push({y:player.y, f:()=>drawPlayerEnt()});
+  list.sort((a,b)=>a.y-b.y);
+  for(const it of list) it.f();
+  if(currentCandidate && !state.dialog && !state.menu){
+    const c=currentCandidate;
+    ctx.font='bold 9px monospace'; ctx.textBaseline='top';
+    const w=ctx.measureText('E').width+8;
+    ctx.fillStyle='rgba(30,25,40,0.72)'; ctx.fillRect(c.x-w/2, c.y, w, 12);
+    ctx.fillStyle='#e8c46a'; ctx.fillText('E', c.x-w/2+4, c.y+2);
+  }
+  ctx.restore();
+  drawLighting();
+  drawHUD();
+  drawTouchPad();
+  drawTouchButton();
+  if(state.dialog) drawDialog();
+  if(state.menu) drawMenu();
+  drawToasts();
+  drawFade();
+}
+
+/* ============ LEBEN IM FOODCOURT ============
+   Passanten laufen durch, manche stellen sich beim Café-Van an.
+   Das Kaffee-Team arbeitet in Acht-Stunden-Schichten, wer frei hat,
+   spaziert herum oder sitzt hinter dem Van im Schatten. Runner holen
+   Nachschub, wenn etwas ausgeht. */
+const foodCrowd = [];                     // Passanten (Foodcourt und Waldbühne)
+const foodRunners = [];                   // Leute, die Kisten schleppen
+const FOOD_CROWD_MIN = 9;                 // so viele sind mindestens unterwegs
+let foodSpawnT = 0;
+
+// Ein- und Ausgänge der Foodcourt-Karte
+const FOOD_EXITS = [
+  { id:'camp', x:3*TILE,  y:25*TILE+8 },
+  { id:'wald', x:15*TILE+8, y:3*TILE }
+];
+const FOOD_CORNER = { x:15*TILE, y:24*TILE+8 };
+
+// --- Der Café-Van: feste Punkte ---
+const VAN = {
+  x: 5*TILE, y: 19*TILE, w:78, h:52,
+  get base(){ return this.y + this.h; },
+  get lukeX(){ return this.x + 21; },              // Mitte der Durchreiche
+  get schattenX(){ return this.x + 20; },          // hinter dem Van
+  get schattenY(){ return this.y - 16; }
+};
+// Die Schlange läuft von der Luke nach links weg und biegt dann nach oben ab,
+// damit sie nicht den Eingang unten links zustellt.
+function queueSpot(i){
+  const y0 = VAN.base + 16;
+  if(i < 3) return { x: VAN.lukeX - i*13, y: y0 + (i%2?2:0) };
+  const j = i - 3;                                  // ab hier geht es nach Norden
+  return { x: VAN.lukeX - 39 - Math.min(j,4)*4, y: y0 - 2 - j*12 };
+}
+
+const coffee = {
+  team: [],            // drei Leute
+  queue: [],           // wer ansteht (Spieler steckt als Marker mit drin)
+  ziel: 5,             // angestrebte Schlangenlänge
+  zielT: 0,            // wann neu ausgewürfelt wird
+  serveT: 3,           // bis der Vorderste dran ist
+  vorrat: 24,          // Tassen bis Nachschub nötig
+  playerIdx: -1,       // wo der Spieler steht (-1 = nicht angestellt)
+  nachschub: 0,        // >0: Runner ist unterwegs
+  bestellung: null,    // laufendes Hin und Her am Tresen
+  ansprache: null,     // jemand aus der Schlange hat dich angesprochen
+  gespraechMit: null,  // mit wem gerade geredet wird
+  stehZeit: 0,         // wie lange der Spieler schon ansteht
+  anspracheCool: 30,   // Ruhe, bis wieder jemand von sich aus redet
+  endeAbgenickt: false,// wie das letzte Gespräch ausging
+  gespraech: null,     // laufendes Gespräch mit dem Nachbarn
+  quatschGenutzt: false // Smalltalk am Tresen pro Bestellung nur einmal
+};
+
+const KAFFEE_NAMEN = ['Nuri','Pelle','Sam'];
+function buildCoffeeTeam(){
+  coffee.team.length = 0;
+  const pals = [
+    { o:'#4a3a35', h:'#8a4a2f', d:'#6d3722', s:'#e0b088', S:'#c08e66', e:'#2e2430',
+      c:'#3f6f8a', k:'#2e5468', p:'#3a3f47', b:'#4a3a2a' },
+    { o:'#4a3a35', h:'#2e2833', d:'#1f1a24', s:'#8a5f3f', S:'#6d472c', e:'#2e2430',
+      c:'#c95a4a', k:'#a3402f', p:'#474c66', b:'#4a3a2a' },
+    { o:'#4a3a35', h:'#d8d0b8', d:'#b3ab92', s:'#d8a878', S:'#b8875a', e:'#2e2430',
+      c:'#5f9b6a', k:'#457a4f', p:'#3f4457', b:'#4a3a2a' }
+  ];
+  for(let i=0;i<3;i++){
+    coffee.team.push({
+      id:'kaffee'+i, name:KAFFEE_NAMEN[i], pal:pals[i], gridSet:PLAYER_GRIDS,
+      x:VAN.schattenX + (i-1)*15, y:VAN.schattenY + (i%2?5:0), facing:'down',
+      moving:false, animT:Math.random(), frame:0,
+      modus:'pause', modusT:5+Math.random()*20, ziel:null, chat:null, chatCool:3
+    });
+  }
+}
+// Wer hat gerade Schicht? Alle acht Stunden wird gewechselt.
+function schichtIndex(){
+  const std = (state.clock.day-1)*24 + state.clock.min/60;
+  return Math.floor(std/8) % 3;
+}
+function baristaJetzt(){ return coffee.team[schichtIndex()]; }
+
+// Gewichtete Schlangenlänge: meistens um die fünf, selten leer, oft viel mehr
+function wuerfleSchlange(){
+  const r = Math.random();
+  if(r < 0.06) return 0;                                   // selten mal niemand
+  if(r < 0.55) return 3 + Math.floor(Math.random()*5);      // meistens 3-7
+  if(r < 0.85) return 8 + Math.floor(Math.random()*5);      // oft deutlich mehr
+  return 13 + Math.floor(Math.random()*6);                  // manchmal richtig voll
+}
+// Ein neuer Gast. Wer sich anstellt, kommt von der Gasse her angelaufen –
+// sofort=true setzt ihn direkt auf seinen Platz (beim Betreten der Karte).
+function neuerAnsteher(idx, sofort){
+  const s = queueSpot(idx||0);
+  const start = sofort ? s : { x: s.x + 40 + Math.random()*40, y: s.y + 14 + Math.random()*10 };
+  return { pal:randomWandererPal(), gridSet:PLAYER_GRIDS, facing:'up',
+           moving:false, animT:Math.random()*2, frame:0,
+           x:start.x, y:start.y, chat:null, chatCool:1+Math.random()*6, istSpieler:false };
+}
+// Beim Betreten der Karte steht schon jemand an – zwischen null und zehn Leuten
+function schlangeNeuAufstellen(){
+  coffee.queue.length = 0;
+  coffee.playerIdx = -1;
+  coffee.bestellung = null;
+  const n = Math.floor(Math.random()*11);
+  for(let i=0;i<n;i++) coffee.queue.push(neuerAnsteher(i, true));
+  coffee.ziel = Math.max(n, wuerfleSchlange());
+  coffee.zielT = 15+Math.random()*20;
+}
+
+// Schickt jemanden aus der Menge zur Schlange. Ist gerade niemand in der Nähe,
+// betritt jemand ganz normal über einen Ausgang die Karte und läuft hin.
+function schickJemandenZurSchlange(){
+  const frei = foodCrowd.filter(p=>!p.zurSchlange && p.pause<=0);
+  let wer = null;
+  if(frei.length){
+    // Am liebsten jemand, der ohnehin schon in der Nähe ist
+    frei.sort((a,b)=>Math.hypot(a.x-VAN.lukeX,a.y-VAN.base) - Math.hypot(b.x-VAN.lukeX,b.y-VAN.base));
+    wer = frei[0];
+  } else {
+    spawnFoodPerson();
+    wer = foodCrowd[foodCrowd.length-1];
+  }
+  if(!wer) return;
+  wer.zurSchlange = true;
+  wer.anmarschNr = ++anmarschZaehler;   // Reihenfolge der Ankommenden
+  wer.route = [];                       // das Ziel wird laufend neu bestimmt
+}
+let anmarschZaehler = 0;
+
+/* --- Passanten --- */
+function spawnFoodPerson(){
+  const ein = pick(FOOD_EXITS);
+  const aus = FOOD_EXITS.find(e=>e.id!==ein.id);
+  foodCrowd.push({
+    scene:'food',
+    x:ein.x+(Math.random()*20-10), y:ein.y+(Math.random()*20-10),
+    facing:'down', moving:true, animT:Math.random()*2, frame:0,
+    pal:randomWandererPal(), gridSet:PLAYER_GRIDS,
+    route: ein.id==='camp'
+      ? [{x:FOOD_CORNER.x+(Math.random()*40-20), y:FOOD_CORNER.y+(Math.random()*30-15)}, {x:aus.x, y:aus.y}]
+      : [{x:FOOD_CORNER.x+(Math.random()*40-20), y:FOOD_CORNER.y+(Math.random()*30-15)}, {x:aus.x, y:aus.y}],
+    speed: 30+Math.random()*20,
+    travelT: 0,
+    pause: 0,                                   // steht gerade und schaut
+    zurSchlange: false,                         // will sich Kaffee holen
+    chat: null, chatCool: 2+Math.random()*5
+  });
+}
+function moveFoodPerson(p, dx, dy){
+  p.x += dx;
+  let box = entBox(p);
+  for(const s of foodSolids){
+    if(rectsOverlap(box,s)){
+      if(dx>0) p.x = s.x - 5; else if(dx<0) p.x = s.x + s.w + 5;
+      box = entBox(p);
+    }
+  }
+  p.y += dy;
+  box = entBox(p);
+  for(const s of foodSolids){
+    if(rectsOverlap(box,s)){
+      if(dy>0) p.y = s.y - 0.01; else if(dy<0) p.y = s.y + s.h + 7;
+      box = entBox(p);
+    }
+  }
+}
+function foodCrowdUpdate(dt){
+  if(foodCrowd.length < FOOD_CROWD_MIN){
+    foodSpawnT -= dt;
+    if(foodSpawnT<=0){ foodSpawnT = 0.3+Math.random()*0.8; spawnFoodPerson(); }
+  }
+  for(let i=foodCrowd.length-1;i>=0;i--){
+    const p = foodCrowd[i];
+    // Wer sich anstellen will, läuft ans jeweils aktuelle Ende der Schlange
+    if(p.zurSchlange){
+      const vorDran = foodCrowd.filter(o=>o.zurSchlange && o.anmarschNr < p.anmarschNr).length;
+      const s = queueSpot(coffee.queue.length + vorDran);
+      const dx=s.x-p.x, dy=s.y-p.y, d=Math.hypot(dx,dy);
+      if(d < 5){
+        // Angekommen: nahtlos in die Schlange wechseln
+        const q = neuerAnsteher(coffee.queue.length, true);
+        q.pal=p.pal; q.x=s.x; q.y=s.y;
+        coffee.queue.push(q);
+        foodCrowd.splice(i,1);
+        continue;
+      }
+      p.moving = true;
+      if(Math.abs(dx)>Math.abs(dy)) p.facing = dx>0?'right':'left';
+      else                          p.facing = dy>0?'down':'up';
+      moveFoodPerson(p, (dx/d)*p.speed*dt, (dy/d)*p.speed*dt);
+      p.animT += dt; p.frame = Math.floor(p.animT*7)%4;
+      continue;
+    }
+    if(p.pause>0){ p.pause-=dt; p.moving=false; continue; }
+    p.travelT += dt;
+    if(p.travelT>90){ foodCrowd.splice(i,1); continue; }
+    const wp = p.route[0];
+    if(!wp){ foodCrowd.splice(i,1); continue; }
+    const dx=wp.x-p.x, dy=wp.y-p.y, d=Math.hypot(dx,dy);
+    if(d<8){
+      p.route.shift();
+      if(!p.route.length){
+        foodCrowd.splice(i,1);
+      }
+      continue;
+    }
+    p.moving = true;
+    if(Math.abs(dx)>Math.abs(dy)) p.facing = dx>0?'right':'left';
+    else                          p.facing = dy>0?'down':'up';
+    moveFoodPerson(p, (dx/d)*p.speed*dt, (dy/d)*p.speed*dt);
+    p.animT += dt; p.frame = Math.floor(p.animT*7)%4;
+    // Manche bleiben unterwegs kurz stehen und schauen sich um
+    if(Math.random() < 0.12*dt){ p.pause = 1+Math.random()*4; }
+  }
+}
+
+/* --- Runner: holen Kisten vom Lager zu den Ständen --- */
+const RUNNER_LAGER = { x:23*TILE, y:24*TILE };
+function spawnRunner(fuerKaffee){
+  const ziele = [{x:10*TILE, y:17*TILE+40},{x:22*TILE, y:13*TILE+40},{x:10*TILE, y:10*TILE+40}];
+  const ziel = fuerKaffee ? {x:VAN.lukeX, y:VAN.base+6} : pick(ziele);
+  foodRunners.push({
+    x:RUNNER_LAGER.x, y:RUNNER_LAGER.y, facing:'up', moving:true,
+    animT:Math.random(), frame:0, pal:randomWandererPal(), gridSet:PLAYER_GRIDS,
+    kiste:true, kaffee:!!fuerKaffee,
+    route:[{x:FOOD_CORNER.x, y:FOOD_CORNER.y}, ziel, {x:RUNNER_LAGER.x, y:RUNNER_LAGER.y}],
+    speed: 46+Math.random()*14, travelT:0
+  });
+}
+function foodRunnersUpdate(dt){
+  for(let i=foodRunners.length-1;i>=0;i--){
+    const r = foodRunners[i];
+    r.travelT += dt;
+    if(r.travelT>120){ foodRunners.splice(i,1); continue; }
+    const wp = r.route[0];
+    if(!wp){ foodRunners.splice(i,1); continue; }
+    const dx=wp.x-r.x, dy=wp.y-r.y, d=Math.hypot(dx,dy);
+    if(d<8){
+      r.route.shift();
+      // Am Ziel angekommen: Kiste abgeben
+      if(r.route.length===1){
+        r.kiste = false;
+        if(r.kaffee){ coffee.vorrat = 24; coffee.nachschub = 0; }
+      }
+      if(!r.route.length) foodRunners.splice(i,1);
+      continue;
+    }
+    r.moving = true;
+    if(Math.abs(dx)>Math.abs(dy)) r.facing = dx>0?'right':'left';
+    else                          r.facing = dy>0?'down':'up';
+    moveFoodPerson(r, (dx/d)*r.speed*dt, (dy/d)*r.speed*dt);
+    r.animT += dt; r.frame = Math.floor(r.animT*7)%4;
+  }
+  // Ab und zu schickt jemand einen Runner los, auch ohne Anlass
+  if(foodRunners.length < 2 && Math.random() < 0.04*dt*60/60){
+    if(Math.random()<0.02) spawnRunner(false);
+  }
+}
+
+// Der Van steht im Weg: wer von hinten nach vorne will (oder umgekehrt),
+// geht links außen herum statt zu versuchen, hindurchzulaufen.
+function routeUmDenVan(m, ziel){
+  const obenAlt = m.y < VAN.y, obenNeu = ziel.y < VAN.y;
+  const imWeg = (m.x > VAN.x-10 && m.x < VAN.x+VAN.w+10) ||
+                (ziel.x > VAN.x-10 && ziel.x < VAN.x+VAN.w+10);
+  if(obenAlt !== obenNeu && imWeg){
+    const seite = VAN.x - 18;                 // links am Van vorbei
+    return [{x:seite, y:m.y}, {x:seite, y:ziel.y}, ziel];
+  }
+  return [ziel];
+}
+
+/* --- Das Team: Schicht am Van, sonst spazieren oder Pause --- */
+function coffeeTeamUpdate(dt){
+  const dienst = schichtIndex();
+  for(let i=0;i<coffee.team.length;i++){
+    const m = coffee.team[i];
+    if(i!==dienst && m.modus==='dienst'){
+      // Gerade Feierabend: raus aus dem Van, ab in den Schatten
+      m.x = VAN.schattenX + (i-1)*15 + (Math.random()*6-3);
+      m.y = VAN.schattenY + (i%2?5:0) + (Math.random()*5-2);
+      m.modus = 'pause'; m.modusT = 8+Math.random()*14;
+      m.route = [];
+    }
+    if(i===dienst){                       // steht am Tresen
+      if(m.modus!=='dienst') toast(m.name+' übernimmt die Schicht am Café-Van.');
+      m.modus='dienst'; m.moving=false;
+      m.x = VAN.lukeX; m.y = VAN.y + 34;
+      m.facing='down';
+      continue;
+    }
+    m.modusT -= dt;
+    if(m.modusT<=0){
+      // Nach der Pause entweder spazieren oder wieder in den Schatten
+      m.modus = Math.random()<0.45 ? 'spazieren' : 'pause';
+      m.modusT = 12+Math.random()*30;
+      const ziel = m.modus==='spazieren'
+        ? { x: 4*TILE+Math.random()*12*TILE, y: 22*TILE+Math.random()*4*TILE }
+        : { x: VAN.schattenX + (i-1)*15 + (Math.random()*8-4),
+            y: VAN.schattenY + (i%2?5:0) + (Math.random()*6-3) };
+      m.route = routeUmDenVan(m, ziel);
+    }
+    // Der Weg wird Punkt für Punkt abgelaufen
+    if(m.route && m.route.length){
+      const wp = m.route[0];
+      const dx=wp.x-m.x, dy=wp.y-m.y, d=Math.hypot(dx,dy);
+      if(d<5){ m.route.shift(); }
+      else {
+        m.moving=true;
+        if(Math.abs(dx)>Math.abs(dy)) m.facing = dx>0?'right':'left';
+        else                          m.facing = dy>0?'down':'up';
+        moveFoodPerson(m, (dx/d)*38*dt, (dy/d)*38*dt);
+        m.animT += dt; m.frame = Math.floor(m.animT*7)%4;
+      }
+    } else {
+      m.moving=false;
+      if(m.modus==='pause') m.facing='down';
+    }
+  }
+}
+
+/* --- Die Schlange --- */
+function schlangeLaenge(){ return coffee.queue.length; }
+function spielerStehtAn(){ return coffee.playerIdx >= 0; }
+
+function coffeeUpdate(dt){
+  // Ziel-Länge ab und zu neu würfeln
+  coffee.zielT -= dt;
+  if(coffee.zielT<=0){ coffee.zielT = 18+Math.random()*26; coffee.ziel = wuerfleSchlange(); }
+  // Auffüllen: niemand erscheint aus dem Nichts – es kommt jemand aus der Menge,
+  // und wenn gerade niemand da ist, betritt jemand die Karte am Eingang.
+  const ohneSpieler = coffee.queue.filter(q=>!q.istSpieler).length;
+  const anmarsch = foodCrowd.filter(p=>p.zurSchlange).length;
+  if(ohneSpieler + anmarsch < coffee.ziel && Math.random() < 1.3*dt){
+    schickJemandenZurSchlange();
+  } else if(ohneSpieler > coffee.ziel + 2 && Math.random() < 0.5*dt){
+    for(let i=coffee.queue.length-1;i>=0;i--){
+      if(!coffee.queue[i].istSpieler){ coffee.queue.splice(i,1); break; }
+    }
+    if(coffee.playerIdx >= coffee.queue.length) coffee.playerIdx = coffee.queue.length-1;
+  }
+  // Am Tresen wird bestellt: erst das Hin und Her, dann ist der Gast durch
+  if(coffee.queue.length && coffee.vorrat>0){
+    const vorne = coffee.queue[0];
+    const amPlatz = vorne.istSpieler ||
+      (Math.abs(vorne.x-queueSpot(0).x)<3 && Math.abs(vorne.y-queueSpot(0).y)<3);
+    if(!coffee.bestellung && amPlatz){ coffee.bestellung = neueBestellung(); }
+    if(coffee.bestellung){
+      coffee.bestellung.t += dt;
+      if(coffee.bestellung.t > 1.15){
+        coffee.bestellung.t = 0;
+        coffee.bestellung.idx++;
+        if(coffee.bestellung.idx >= coffee.bestellung.schritte.length){
+          coffee.bestellung = null;
+          if(vorne.istSpieler){ spielerDran(); }
+          else {
+            coffee.queue.shift();
+            coffee.vorrat--;
+            if(coffee.playerIdx>0) coffee.playerIdx--;
+            if(coffee.vorrat<=0 && !coffee.nachschub){ coffee.nachschub=1; spawnRunner(true); }
+          }
+        }
+      }
+    }
+  } else if(coffee.queue.length && coffee.vorrat<=0){
+    coffee.bestellung = null;
+    if(!coffee.nachschub){ coffee.nachschub = 1; spawnRunner(true); }
+  }
+  // Alle an ihren Platz stellen und plaudern lassen
+  for(let i=0;i<coffee.queue.length;i++){
+    const q = coffee.queue[i];
+    const s = queueSpot(i);
+    if(q.istSpieler){ player.x = s.x; player.y = s.y; player.facing = i<3 ? 'up' : 'down'; continue; }
+    // Nachrücken: normales Gehtempo, kein Ziehen
+    const dx=s.x-q.x, dy=s.y-q.y, d=Math.hypot(dx,dy);
+    if(d > 0.6){
+      const v = Math.min(d, 36*dt);
+      q.x += dx/d*v; q.y += dy/d*v;
+      q.moving = true; q.animT += dt; q.frame = Math.floor(q.animT*7)%4;
+    } else {
+      q.x = s.x; q.y = s.y; q.moving = false;
+    }
+    // Vorne schaut man zum Tresen, weiter hinten nach vorne in die Reihe
+    q.facing = i<3 ? 'up' : 'down';
+    if(q.chat){ q.chat.t-=dt; if(q.chat.t<=0) q.chat=null; }
+    else if(q.chatCool>0) q.chatCool-=dt;
+  }
+  // Nur wenn der Spieler ansteht, hört er die Gespräche um sich herum
+  if(coffee.anspracheCool > 0) coffee.anspracheCool -= dt;
+  if(spielerStehtAn()){
+    coffee.stehZeit += dt;
+    for(let i=0;i<coffee.queue.length;i++){
+      const q = coffee.queue[i];
+      if(q.istSpieler || q.chat || q.chatCool>0) continue;
+      if(Math.abs(i-coffee.playerIdx) > 3) continue;      // nur in Hörweite
+      if(Math.random() < 0.5*dt){
+        q.chat = { t:2.6, icon:pick(KAFFEE_THEMEN), role:'ask' };
+        q.chatCool = 5+Math.random()*8;
+      }
+    }
+    // Ab und zu spricht dich jemand direkt an – dann kann man antworten
+    if(coffee.ansprache){
+      coffee.ansprache.t -= dt;
+      if(coffee.ansprache.t<=0) coffee.ansprache = null;
+    } else if(!state.dialog && coffee.stehZeit > 14 && coffee.anspracheCool <= 0
+              && Math.random() < 0.02*dt){
+      // Selten mal spricht dich jemand von der Seite an
+      const nachbarn = [coffee.playerIdx-1, coffee.playerIdx+1]
+        .filter(i=>i>=0 && i<coffee.queue.length && !coffee.queue[i].istSpieler);
+      if(nachbarn.length){
+        const i = pick(nachbarn);
+        coffee.ansprache = { idx:i, t:20 };
+        starteQueueGespraech(i);
+        startDialog('queueTalk1', {breakable:true});
+      }
+    }
+  } else {
+    coffee.ansprache = null;
+    coffee.stehZeit = 0;
+  }
+}
+const KAFFEE_THEMEN = ['kuh','kuhDurch','tasse','zucker','herz','note','frage'];
+// Womit die Bedienung antwortet und womit Gäste bestellen
+const BESTELL_GAST = ['tasse','doppelt','kuh','kuhDurch','zucker'];
+const BESTELL_BED  = ['frage','daumen','geld','karte','herz'];
+// Ein kleines Hin und Her am Tresen: Gast sagt was, Bedienung antwortet
+function neueBestellung(){
+  const schritte = [];
+  schritte.push({ wer:'gast', icon: pick(['tasse','doppelt']) });
+  schritte.push({ wer:'bed',  icon: 'frage' });
+  schritte.push({ wer:'gast', icon: pick(['kuh','kuhDurch','kuhDurch','zucker']) });
+  if(Math.random()<0.3) schritte.push({ wer:'bed', icon:'herz' });      // manchmal wird geflirtet
+  schritte.push({ wer:'bed',  icon: pick(['geld','karte']) });
+  schritte.push({ wer:'gast', icon: pick(['geld','karte','daumen']) });
+  return { schritte, idx:0, t:0 };
+}
+
+/* --- Anstellen und bedient werden --- */
+function vanTalk(){
+  if(getItem('milch') && state.flags.milchMission && !state.flags.milchDone && !spielerStehtAn()){
+    startDialog('milchAbgabe1', {breakable:true});
+    return;
+  }
+  if(spielerStehtAn()){
+    if(coffee.ansprache){ startDialog('queueAntwort1', {breakable:true}); return; }
+    startDialog('queueLeave1', {breakable:true});
+    return;
+  }
+  if(coffee.vorrat<=0){ startDialog('coffeeEmpty1', {breakable:true}); return; }
+  startDialog('queueJoin1', {breakable:true});
+}
+// Wer steht neben mir?
+function nachbarIndex(){
+  if(coffee.playerIdx<0) return -1;
+  const kandidaten = [coffee.playerIdx-1, coffee.playerIdx+1]
+    .filter(i=>i>=0 && i<coffee.queue.length && !coffee.queue[i].istSpieler);
+  return kandidaten.length ? pick(kandidaten) : -1;
+}
+function nachbarDa(){ return nachbarIndex() >= 0; }
+
+// Aus der Schlange treten
+function spielerAusSchlange(){
+  coffee.gespraech = null; coffee.ansprache = null; coffee.stehZeit = 0;
+  if(coffee.playerIdx<0) return;
+  coffee.queue.splice(coffee.playerIdx,1);
+  coffee.playerIdx = -1;
+  player.y = VAN.base + 30;
+}
+// Der Spieler ist an der Reihe: jetzt wird richtig bestellt
+function spielerDran(){
+  coffee.quatschGenutzt = false;
+  coffee.queue.shift();
+  coffee.playerIdx = -1;
+  player.y = VAN.base + 30;
+  startDialog('bestell1', {breakable:true});
+}
+// Wie gut kommt Smalltalk gerade an? Bei Andrang sind sie gestresst.
+function smalltalkWert(){
+  const n = coffee.queue.length;
+  if(!state.flags.milchDone) return 0;      // vorher wollen sie gar nicht reden
+  if(n >= 6) return -1;                     // voller Laden, schlechter Zeitpunkt
+  if(n <= 2) return 2;                      // Ruhe, da geht was
+  return 1;
+}
+function kaffeeSympathie(wert){
+  const b = baristaJetzt();
+  if(wert) addSympathy(b.id, wert);
+}
+
+/* --- Smalltalk mit dem Team, egal ob am Tresen oder in der Pause --- */
+function teamTalk(m){
+  coffee.gespraechMit = m;
+  if(!state.flags.milchDone){ startDialog('teamAbfuhr1', {breakable:true}); return; }
+  startDialog('teamSmalltalk1', {breakable:true});
+}
+function kuehlTalk(){
+  if(!state.flags.milchMission){
+    startDialog(lin([{ who:'sys', name:'Kühlwagen',
+      text:'Ein Kühlwagen für den Nachschub. Verschlossen – ohne Grund macht den niemand auf.' }]), {breakable:true});
+    return;
+  }
+  if(state.flags.milchDone || getItem('milch')){
+    startDialog(lin([{ who:'sys', name:'Kühlwagen',
+      text:'Hier stapeln sich die Kartons. Du hast schon, was du brauchst.' }]), {breakable:true});
+    return;
+  }
+  startDialog('milchNehmen1', {breakable:true});
+}
+
+// Der Kühlwagen: hier lagert der Nachschub für die Stände
+function addKuehlwagen(tx,ty){
+  const x=tx*TILE, base=(ty+1)*TILE+8;
+  foodObjects.push({ type:'kuehlwagen', x, y:base-40, w:52, h:40, base,
+    ax:x+26, ay:base, label:'Kühlwagen', talk:()=>kuehlTalk() });
+  foodSolids.push({x:x+2, y:base-24, w:48, h:24});
+}
+function drawKuehlwagen(o){
+  ctx.fillStyle='rgba(30,25,20,0.24)'; ctx.fillRect(o.x+3,o.base-4,o.w-6,5);
+  ctx.fillStyle='#c9ccd4'; ctx.fillRect(o.x, o.y+8, o.w, o.h-12);       // Korpus
+  ctx.fillStyle='#e2e5ec'; ctx.fillRect(o.x+2, o.y+10, o.w-4, o.h-18);
+  ctx.fillStyle='#8f96a3'; ctx.fillRect(o.x, o.y+8, o.w, 3);
+  ctx.fillStyle='#5f9bd9'; ctx.fillRect(o.x+6, o.y+16, o.w-12, 10);     // Kühlstreifen
+  ctx.fillStyle='#8fc4ef'; ctx.fillRect(o.x+8, o.y+18, o.w-16, 6);
+  ctx.fillStyle='#3b4450'; ctx.fillRect(o.x+o.w-14, o.y+14, 10, 14);    // Tür
+  ctx.fillStyle='#c9ccd4'; ctx.fillRect(o.x+o.w-7, o.y+20, 2, 3);
+  ctx.fillStyle='#fdfdff';                                              // Schneeflocke
+  ctx.fillRect(o.x+16, o.y+19, 5, 1); ctx.fillRect(o.x+18, o.y+17, 1, 5);
+  ctx.fillStyle='#3b4450'; ctx.fillRect(o.x+4, o.base-8, 6, 6); ctx.fillRect(o.x+o.w-12, o.base-8, 6, 6);
+}
+
+function addFoodSign(tx,ty,text){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  foodObjects.push({ type:'sign', x, base, text, label:'Schild', ax:x, ay:base });
+  foodSolids.push({x:x-6, y:base-4, w:12, h:4});
+}
+function addFoodGate(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  foodObjects.push({ type:'campGate', x, base, label:'Zum Campingplatz',
+    ax:x, ay:base, talk:()=>leaveFood() });
+}
+function addFoodLight(x,y,r,col,s,flicker){
+  foodLights.push({ x, y, r, col, s, flicker, seed:Math.random()*100 });
+}
+
+/* --- Hin und zurück --- */
+const CAMP_FOOD_GATE = { x:40*TILE+8, y:31*TILE };
+function enterFood(){
+  fadeTo(()=>{
+    state.scene = 'food';
+    schlangeNeuAufstellen();
+    player.x = 3*TILE; player.y = 25*TILE+8;      // links am Eingang
+    player.facing = 'right';
+    if(!state.flags.foodSeen){
+      state.flags.foodSeen = true;
+      state.journal.memories.push('Den Foodcourt entdeckt. Von dort geht es hoch zur Waldbühne.');
+    }
+  });
+}
+function leaveFood(){
+  if(spielerStehtAn()) spielerAusSchlange();
+  fadeTo(()=>{
+    state.scene = 'camp';
+    player.x = CAMP_FOOD_GATE.x; player.y = CAMP_FOOD_GATE.y - 10;
+    player.facing = 'up';
+  });
+}
+
+/* --- Zeichnen --- */
+function drawVan(o){
+  ctx.fillStyle='rgba(30,25,20,0.25)'; ctx.fillRect(o.x+4,o.base-5,o.w-8,6);
+  // Karosserie
+  ctx.fillStyle='#4a8f9b'; ctx.fillRect(o.x, o.y+10, o.w, o.h-16);
+  ctx.fillStyle='#e8e0d0'; ctx.fillRect(o.x, o.y+10, o.w, 10);        // weißes Dach
+  ctx.fillStyle='#3b7480'; ctx.fillRect(o.x, o.y+28, o.w, 4);
+  // Fenster und Klappe
+  ctx.fillStyle='#2a2438'; ctx.fillRect(o.x+8, o.y+22, 26, 12);
+  ctx.fillStyle='#f2e2a8'; ctx.fillRect(o.x+10, o.y+24, 22, 8);       // beleuchtete Durchreiche
+  ctx.fillStyle='#8a6a44'; ctx.fillRect(o.x+8, o.y+34, 26, 3);        // Tresenbrett
+  // Markise über der Klappe
+  ctx.fillStyle='#c94f6f'; ctx.fillRect(o.x+4, o.y+16, 34, 6);
+  ctx.fillStyle='#e8748f';
+  for(let i=0;i<5;i++) ctx.fillRect(o.x+4+i*7, o.y+16, 4, 6);
+  // Räder
+  ctx.fillStyle='#241f2e';
+  pixCircle(o.x+14, o.base-4, 5, '#241f2e');
+  pixCircle(o.x+o.w-14, o.base-4, 5, '#241f2e');
+  ctx.fillStyle='#5a5a70';
+  pixCircle(o.x+14, o.base-4, 2, '#5a5a70');
+  pixCircle(o.x+o.w-14, o.base-4, 2, '#5a5a70');
+  // Wer Dienst hat, steht in der Durchreiche
+  const b = coffee.team.length ? coffee.team[schichtIndex()] : null;
+  if(b){
+    const bx = o.x+21, by = o.y+24;
+    ctx.fillStyle=b.pal.h; ctx.fillRect(bx-4, by-1, 8, 4);        // Haare
+    ctx.fillStyle=b.pal.s; ctx.fillRect(bx-3, by+2, 6, 4);        // Gesicht
+    ctx.fillStyle=b.pal.e; ctx.fillRect(bx-2, by+3, 1, 1); ctx.fillRect(bx+1, by+3, 1, 1);
+    ctx.fillStyle=b.pal.c; ctx.fillRect(bx-4, by+6, 8, 3);        // Schultern
+  }
+  // Kaffeetasse als Schild auf dem Dach
+  ctx.fillStyle='#fdf3dc'; ctx.fillRect(o.x+o.w-26, o.y, 20, 11);
+  ctx.fillStyle='#6d4a2f'; ctx.fillRect(o.x+o.w-22, o.y+3, 9, 6);
+  ctx.fillRect(o.x+o.w-13, o.y+4, 3, 3);
+}
+// Kleines Bild von dem, was der Stand verkauft
+function drawGericht(art, x, y){
+  if(art==='knoedel'){
+    ctx.fillStyle='#e8e0c0'; ctx.fillRect(x+1,y+3,10,6); ctx.fillRect(x+3,y+1,6,2);
+    ctx.fillStyle='#5f9b6a'; ctx.fillRect(x+3,y+4,3,2); ctx.fillRect(x+7,y+6,2,2);
+    ctx.fillStyle='#c9a03f'; ctx.fillRect(x+1,y+9,10,2);
+  } else if(art==='pommes'){
+    ctx.fillStyle='#c9402f'; ctx.fillRect(x+2,y+5,8,6);              // Tüte
+    ctx.fillStyle='#e8c46a';
+    ctx.fillRect(x+3,y,2,7); ctx.fillRect(x+6,y+1,2,6); ctx.fillRect(x+8,y+2,2,5);
+  } else if(art==='langos'){
+    ctx.fillStyle='#d9a24a'; ctx.fillRect(x+1,y+3,11,6); ctx.fillRect(x+2,y+2,9,1);
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(x+3,y+4,7,2);              // Sauerrahm
+    ctx.fillStyle='#f0d484'; ctx.fillRect(x+4,y+6,5,1);              // Käse
+  }
+}
+function drawStall(o){
+  ctx.fillStyle='rgba(30,25,20,0.22)'; ctx.fillRect(o.x+3,o.base-4,o.w-6,5);
+  // Tresen und Rückwand
+  ctx.fillStyle='#6d5236'; ctx.fillRect(o.x+2, o.y+14, o.w-4, o.h-14);
+  ctx.fillStyle='#82633f'; ctx.fillRect(o.x+4, o.y+16, o.w-8, o.h-20);
+  ctx.fillStyle='#5a4430'; ctx.fillRect(o.x+2, o.y+o.h-8, o.w-4, 3);
+  // Dach in der Standfarbe, gestreift
+  ctx.fillStyle=o.col; ctx.fillRect(o.x, o.y+4, o.w, 11);
+  ctx.fillStyle='#fdf3dc';
+  for(let i=0;i<4;i++) ctx.fillRect(o.x+3+i*12, o.y+4, 5, 11);
+  ctx.fillStyle=o.col; ctx.fillRect(o.x, o.y+4, o.w, 3);
+  // Stangen
+  ctx.fillStyle='#4a4038';
+  ctx.fillRect(o.x+1, o.y+15, 2, o.h-15); ctx.fillRect(o.x+o.w-3, o.y+15, 2, o.h-15);
+  // Angebot auf dem Tresen
+  drawGericht(o.gericht, o.x+o.w/2-6, o.y+20);
+  // Namensschild
+  ctx.font='6px monospace'; ctx.textBaseline='top';
+  const tw=ctx.measureText(o.name).width;
+  ctx.fillStyle='rgba(30,25,40,0.66)'; ctx.fillRect(o.x+o.w/2-tw/2-2, o.y+o.h-9, tw+4, 8);
+  ctx.fillStyle='#fdf3dc'; ctx.fillText(o.name, o.x+o.w/2-tw/2, o.y+o.h-8);
+}
+function drawPicnic(o){
+  ctx.fillStyle='rgba(30,25,20,0.18)'; ctx.fillRect(o.x+3,o.base-2,30,3);
+  ctx.fillStyle='#8a6a44'; ctx.fillRect(o.x+2, o.base-6, 32, 5);      // hintere Bank
+  ctx.fillStyle='#9c7a50'; ctx.fillRect(o.x+2, o.base-6, 32, 2);
+  ctx.fillStyle='#a8855a'; ctx.fillRect(o.x, o.base-14, 36, 6);       // Tischplatte
+  ctx.fillStyle='#b89466'; ctx.fillRect(o.x, o.base-14, 36, 2);
+  ctx.fillStyle='#6d5233'; ctx.fillRect(o.x+4, o.base-8, 2, 8); ctx.fillRect(o.x+30, o.base-8, 2, 8);
+  ctx.fillStyle='#8a6a44'; ctx.fillRect(o.x+2, o.base-20, 32, 4);     // vordere Bank
+}
+function drawStage2(o){
+  ctx.fillStyle='rgba(20,16,30,0.26)'; ctx.fillRect(o.x-3, o.base-5, o.w+6, 7);
+  ctx.fillStyle='#3a4a3d'; ctx.fillRect(o.x, o.y, o.w, o.h);          // Rückwand aus Holz
+  ctx.fillStyle='#2e3b31';
+  for(let x=o.x+5; x<o.x+o.w; x+=13) ctx.fillRect(x, o.y+8, 3, o.h-26);
+  ctx.fillStyle='#4c6152'; ctx.fillRect(o.x, o.y, o.w, 9);            // Dachkante
+  ctx.fillStyle='#5f7a66'; ctx.fillRect(o.x+2, o.y+2, o.w-4, 3);
+  ctx.fillStyle='#6a5340'; ctx.fillRect(o.x+6, o.base-20, o.w-12, 20); // Bühnenboden
+  ctx.fillStyle='#7d6349'; ctx.fillRect(o.x+8, o.base-18, o.w-16, 16);
+  // Banner
+  ctx.fillStyle='#4a8f6a'; ctx.fillRect(o.x+22, o.y+12, o.w-44, 16);
+  ctx.fillStyle='#6bbd8c'; ctx.fillRect(o.x+24, o.y+14, o.w-48, 12);
+  ctx.fillStyle='#fdf3dc'; ctx.font='bold 8px monospace'; ctx.textBaseline='top';
+  ctx.fillText('WALDBÜHNE', o.x+o.w/2-24, o.y+16);
+  // Lichterkette am Dach
+  const d=darkness();
+  const cols=['#ff8a5a','#ffd25a','#8affaa','#8ac8ff','#e88aff'];
+  for(let i=0;i<7;i++){
+    ctx.fillStyle = d>0.2 ? cols[i%5] : '#9c9c9c';
+    ctx.fillRect(o.x+10+i*((o.w-20)/6), o.y+9, 3, 3);
+  }
+}
+function drawCampGate(o){
+  ctx.fillStyle='rgba(30,25,20,0.20)'; ctx.fillRect(o.x-20,o.base-3,40,4);
+  ctx.fillStyle='#6a5340';
+  ctx.fillRect(o.x-20,o.base-38,6,38); ctx.fillRect(o.x+14,o.base-38,6,38);
+  ctx.fillStyle='#7d6349'; ctx.fillRect(o.x-20,o.base-38,3,38); ctx.fillRect(o.x+14,o.base-38,3,38);
+  ctx.fillStyle='#3b3547'; ctx.fillRect(o.x-22,o.base-44,44,8);
+  ctx.fillStyle='#4a4358'; ctx.fillRect(o.x-22,o.base-44,44,3);
+  ctx.fillStyle='#e8c46a'; ctx.font='bold 6px monospace'; ctx.textBaseline='top';
+  ctx.fillText('CAMPING', o.x-15, o.base-43);
+  // Pfeil nach links: hier geht es zurück
+  ctx.fillStyle='#9cc97e';
+  ctx.fillRect(o.x-3, o.base-32, 11, 3);
+  ctx.fillRect(o.x-6, o.base-34, 3, 7);
+  ctx.fillRect(o.x-9, o.base-32, 3, 3);
+}
+// Ein Runner: normale Figur, trägt eine Kiste vor sich her
+function drawRunner(r){
+  drawEntity(r);
+  if(!r.kiste) return;
+  const y = r.y - 12;
+  ctx.fillStyle='#8a6a44'; ctx.fillRect(r.x-6, y, 12, 8);
+  ctx.fillStyle='#a8855a'; ctx.fillRect(r.x-5, y+1, 10, 3);
+  ctx.fillStyle='#6d5233'; ctx.fillRect(r.x-6, y+4, 12, 1);
+  if(r.kaffee){                                  // Milchkiste: weiße Kartons
+    ctx.fillStyle='#e8e0d0';
+    ctx.fillRect(r.x-4, y-3, 3, 4); ctx.fillRect(r.x+1, y-3, 3, 4);
+  }
+}
+// Teammitglied: wie eine normale Figur, aber mit Schürze
+function drawTeamMember(m){
+  drawEntity(m);
+  ctx.fillStyle='#3f3a4a';
+  ctx.fillRect(m.x-4, m.y-9, 8, 6);
+  ctx.fillStyle='#57506a'; ctx.fillRect(m.x-4, m.y-9, 8, 1);
+  // Wer Pause macht und steht, raucht dabei – auf Handhöhe neben dem Körper
+  if(m.modus==='pause' && !m.moving){
+    const hx = m.x+5, hy = m.y-6;
+    ctx.fillStyle='#e8e0d0'; ctx.fillRect(hx, hy, 3, 1);          // Zigarette
+    ctx.fillStyle='#e8944a'; ctx.fillRect(hx+3, hy, 1, 1);        // Glut
+    const t = state.time*1.6 + m.x;
+    ctx.fillStyle='rgba(205,205,215,0.45)';
+    ctx.fillRect(hx+3, hy-2-((t%3)|0), 1, 1);                     // aufsteigender Rauch
+    ctx.fillRect(hx+4, hy-4-((t%2)|0), 1, 1);
+  }
+}
+function drawWaldGateFood(o){
+  ctx.fillStyle='rgba(30,25,20,0.20)'; ctx.fillRect(o.x-20,o.base-3,40,4);
+  ctx.fillStyle='#5a6a44';
+  ctx.fillRect(o.x-20,o.base-38,6,38); ctx.fillRect(o.x+14,o.base-38,6,38);
+  ctx.fillStyle='#6d7d52'; ctx.fillRect(o.x-20,o.base-38,3,38); ctx.fillRect(o.x+14,o.base-38,3,38);
+  ctx.fillStyle='#3a4a3d'; ctx.fillRect(o.x-22,o.base-44,44,8);
+  ctx.fillStyle='#4c6152'; ctx.fillRect(o.x-22,o.base-44,44,3);
+  ctx.fillStyle='#c8e8a0'; ctx.font='bold 6px monospace'; ctx.textBaseline='top';
+  ctx.fillText('WALD', o.x-9, o.base-43);
+  // Pfeil nach oben
+  ctx.fillStyle='#9cc97e';
+  ctx.fillRect(o.x-1,o.base-32,3,10);
+  ctx.fillRect(o.x-4,o.base-30,9,3);
+  ctx.fillRect(o.x-2,o.base-33,5,3);
+}
+function drawFoodObject(o){
+  switch(o.type){
+    case 'van':      drawVan(o); break;
+    case 'stall':    drawStall(o); break;
+    case 'picnic':   drawPicnic(o); break;
+    case 'stage2':   drawStage2(o); break;
+    case 'campGate': drawCampGate(o); break;
+    case 'kuehlwagen': drawKuehlwagen(o); break;
+    case 'waldGate': drawWaldGateFood(o); break;
+    case 'tree':     drawTree(o); break;
+    case 'sign':     drawSign(o); break;
+  }
+}
+function drawFood(){
+  camX=clamp(Math.round(player.x-GAME_W/2), 0, FOOD.W*TILE-GAME_W);
+  camY=clamp(Math.round(player.y-GAME_H/2-10), 0, FOOD.H*TILE-GAME_H);
+  ctx.save();
+  ctx.translate(-camX,-camY);
+  ctx.drawImage(foodGround,0,0);
+  const list=[];
+  for(const o of foodObjects) list.push({y:o.base, f:()=>drawFoodObject(o)});
+  for(const p of foodCrowd)   list.push({y:p.y, f:()=>drawEntity(p)});
+  for(const r of foodRunners) list.push({y:r.y, f:()=>drawRunner(r)});
+  for(const q of coffee.queue) if(!q.istSpieler) list.push({y:q.y, f:()=>drawEntity(q)});
+  // Das Team: wer Dienst hat, steht in der Luke (wird mit dem Van gezeichnet)
+  for(let i=0;i<coffee.team.length;i++){
+    const m = coffee.team[i];
+    if(i===schichtIndex()) continue;
+    list.push({y:m.y, f:()=>drawTeamMember(m)});
+  }
+  if(!spielerStehtAn()) list.push({y:player.y, f:()=>drawPlayerEnt()});
+  else                  list.push({y:player.y+0.5, f:()=>drawPlayerEnt()});
+  list.sort((a,b)=>a.y-b.y);
+  for(const it of list) it.f();
+  // Sprechblasen über allen Köpfen
+  for(const p of foodCrowd) drawChatBubble(p);
+  for(const q of coffee.queue) if(!q.istSpieler) drawChatBubble(q);
+  // Die Bestellung am Tresen: Gast und Bedienung wechseln sich ab
+  if(coffee.bestellung && coffee.queue.length){
+    const s = coffee.bestellung.schritte[coffee.bestellung.idx];
+    if(s){
+      const t = coffee.bestellung.t;
+      const a = t<0.15 ? t/0.15 : (t>0.95 ? (1.15-t)/0.2 : 1);
+      if(s.wer==='bed') drawBubbleAt(VAN.lukeX, VAN.y+14, s.icon, a);
+      else {
+        const g = coffee.queue[0];
+        const gx = g.istSpieler ? player.x : g.x;
+        const gy = g.istSpieler ? player.y : g.y;
+        drawBubbleAt(gx, gy-26, s.icon, a);
+      }
+    }
+  }
+  for(const p of particles){
+    ctx.fillStyle=p.col; ctx.fillRect(Math.round(p.x),Math.round(p.y),p.size,p.size);
+  }
+  if(currentCandidate && !state.dialog && !state.menu){
+    const c=currentCandidate;
+    ctx.font='bold 9px monospace'; ctx.textBaseline='top';
+    const w=ctx.measureText('E').width+8;
+    ctx.fillStyle='rgba(30,25,40,0.72)'; ctx.fillRect(c.x-w/2, c.y, w, 12);
+    ctx.fillStyle='#e8c46a'; ctx.fillText('E', c.x-w/2+4, c.y+2);
+  }
+  ctx.restore();
+  drawLighting();
+  drawHUD();
+  drawTouchPad();
+  drawTouchButton();
+  if(state.dialog) drawDialog();
+  if(state.menu) drawMenu();
+  drawToasts();
+  drawFade();
+}
+
 const ITEMS = {
   glasses: { name:'Sonnenbrille', desc:'Schützt müde Festival-Augen. Geht gerne mal kaputt.', actions:['wear'] },
+  milch:   { name:'Hafermilch',   desc:'Zwei Kartons aus dem Kühlwagen. Für den Café-Van.', actions:[] },
   wood:    { name:'Bretter',      desc:'Ein Armvoll Bühnenbretter. Schwer. Kein Radfahren damit.', actions:[] },
   band:    { name:'Bändchen',     desc:'Crew-Bändchen fürs Handgelenk. Öffnet den Backstage-Bereich.', actions:[] },
   tools:   { name:'Werkzeugkiste', desc:'Schwer. Klappert. Gehört Momo.', actions:[] },
@@ -2020,7 +3242,13 @@ function fireEmit(dt){
    Antwortmöglichkeiten (choices) an. */
 const DIALOGS = {};
 
-function nodeText(node){ return typeof node.text==='function' ? node.text() : node.text; }
+function nodeText(node){
+  // Beim aktiven Knoten den einmal festgelegten Text verwenden – sonst würde
+  // ein zufälliger text() bei jedem Bildaufbau neu würfeln und flackern.
+  const d = state.dialog;
+  if(d && d.node===node && d.textFest != null) return d.textFest;
+  return typeof node.text==='function' ? node.text() : node.text;
+}
 function nodeChoices(node){
   if(!node.choices) return null;
   return typeof node.choices==='function' ? node.choices() : node.choices;
@@ -2046,13 +3274,16 @@ function startDialog(ref, opts){
 function setNode(node){
   const d=state.dialog;
   d.node=node; d.chars=0; d.choiceIdx=0; d.choiceCount=0; d.inputActive=false;
+  d.textFest=null;
   if(node.onEnter){
     const redirect = node.onEnter();
     if(redirect){ setNode(resolveNode(redirect)); return; }
   }
+  d.textFest = typeof node.text==='function' ? node.text() : node.text;
   if(node.input){ d.inputActive=true; showFriendInput(); }
 }
 function goNext(ref){
+  if(typeof ref === 'function') ref = ref();     // Ziel darf sich zur Laufzeit ergeben
   if(ref==null) endDialog();
   else setNode(resolveNode(ref));
 }
@@ -2192,6 +3423,374 @@ DIALOGS.stellaBuild5 = { who:'friend', text:'Geh hin. Der Weg nach Norden, durch
    Beide kennen dich von letzter Nacht — du dich aber nicht an sie.
    Kip erzählt dir, was passiert ist. Momo ist sauer, weil ihr Stuhl
    dabei zu Bruch ging. Mit dem Panzertape lässt sich das kitten. */
+
+
+/* --- Dialoge rund um den Café-Van --- */
+
+/* --- Gespräche mit der Person neben dir in der Schlange ---
+   Jedes Thema hat zwei bis drei Zeilen. Auf jede kannst du mit zwei
+   echten Meinungen antworten oder nur abnicken. Zweimal abgenickt und
+   das Gespräch schläft ein. --- */
+const QUEUE_GESPRAECHE = [
+  { zeilen:[
+    { text:'Stehst du auch schon so lange?', antworten:[
+      { t:'Gefühlt seit heute früh.',        ant:'Ich hab aufgehört zu zählen. Aber der Kaffee ist es wert.' },
+      { t:'Geht schon, ich hab ja Zeit.',    ant:'Beneidenswert. Ich muss gleich Schicht schieben.' } ]},
+    { text:'Die haben nur eine Maschine, das ist das Problem.', antworten:[
+      { t:'Dann sollten sie zwei aufstellen.', ant:'Sag das der Produktion. Viel Glück.' },
+      { t:'Dafür wird er halt ordentlich.',    ant:'Stimmt auch wieder. Lieber langsam als lauwarm.' } ]}
+  ]},
+  { zeilen:[
+    { text:'Hafer oder Kuh, was nimmst du?', antworten:[
+      { t:'Hafer, immer.',                   ant:'Sehe ich genauso. Schmeckt einfach runder.' },
+      { t:'Kuh. Ich bin da altmodisch.',     ant:'Ehrlich? Respekt für die klare Haltung.' } ]},
+    { text:'Letztes Jahr hatten die nur Kuhmilch. Da war was los.', antworten:[
+      { t:'Zu Recht, finde ich.',            ant:'Fand ich auch. Hat ja offenbar geholfen.' },
+      { t:'Bisschen übertrieben, oder?',     ant:'Kann man so sehen. War trotzdem lustig.' } ]}
+  ]},
+  { zeilen:[
+    { text:'Gehst du heute Abend zur Waldbühne?', antworten:[
+      { t:'Klar, das ist der Grund warum ich hier bin.', ant:'Dann sehen wir uns da. Vorne links ist es am besten.' },
+      { t:'Weiß nicht, Mainstage klingt größer.',        ant:'Größer schon. Aber die Waldbühne ist schöner.' } ]},
+    { text:'Der Act um elf soll wohl richtig gut sein.', antworten:[
+      { t:'Hab ich auch gehört.',            ant:'Dann stimmt es wahrscheinlich.' },
+      { t:'Sagen sie jedes Jahr.',           ant:'Ha. Auch wieder wahr.' } ]}
+  ]},
+  { zeilen:[
+    { text:'Wie war deine erste Nacht hier?', antworten:[
+      { t:'Ehrlich gesagt weiß ich es nicht mehr.', ant:'Oh. Eine von denen. Kenne ich.' },
+      { t:'Kurz. Sehr kurz.',                       ant:'Willkommen im Club. Deshalb stehen wir ja hier.' } ]},
+    { text:'Der Platz ist voller geworden als letztes Jahr.', antworten:[
+      { t:'Deutlich. Fast schon zu voll.',   ant:'Ja, das denke ich auch manchmal.' },
+      { t:'Finde ich gut, mehr Leben.',      ant:'Auch eine Art, es zu sehen.' } ]}
+  ]}
+];
+const ABNICK_ANTWORTEN = ['Mhm.', 'Ja, schon.', 'Kann sein.', 'Hm, ja.'];
+const ABNICK_REAKTION  = ['Mhm.', 'Ja...', 'Tja.', 'Hm.'];
+
+function starteQueueGespraech(idx){
+  coffee.gespraech = {
+    idx,                                   // wer neben dir redet
+    thema: Math.floor(Math.random()*QUEUE_GESPRAECHE.length),
+    schritt: 0,
+    abgenickt: 0,
+    antwort: ''
+  };
+}
+function gespraechZeile(){
+  const g = coffee.gespraech;
+  if(!g) return null;
+  const th = QUEUE_GESPRAECHE[g.thema];
+  return th.zeilen[g.schritt] || null;
+}
+function gespraechPartner(){
+  const g = coffee.gespraech;
+  if(!g) return null;
+  return coffee.queue[g.idx] || null;
+}
+// Kleine Sprechblase über dem Gegenüber, passend zum Thema
+function gespraechBlase(icon){
+  const q = gespraechPartner();
+  if(q && !q.istSpieler) q.chat = { t:2.8, icon: icon || pick(KAFFEE_THEMEN), role:'ask' };
+}
+
+DIALOGS.queueTalk1 = { who:'sys', name:'Neben dir',
+  text(){ const z = gespraechZeile(); return z ? z.text : '...'; },
+  onEnter(){ gespraechBlase(); },
+  choices(){
+    const z = gespraechZeile();
+    if(!z) return [{ t:'...', next:'queueTalkEnde' }];
+    const c = z.antworten.map((a,i)=>({ t:a.t, next:'queueTalk2',
+      fx(){ coffee.gespraech.antwort = a.ant; coffee.gespraech.nurGenickt = false; } }));
+    c.push({ t: pick(ABNICK_ANTWORTEN), next:'queueTalk2',
+      fx(){ coffee.gespraech.antwort = pick(ABNICK_REAKTION);
+            coffee.gespraech.abgenickt++; coffee.gespraech.nurGenickt = true; } });
+    return c;
+  }};
+DIALOGS.queueTalk2 = { who:'sys', name:'Neben dir',
+  text(){ return coffee.gespraech ? coffee.gespraech.antwort : '...'; },
+  onEnter(){
+    const g = coffee.gespraech;
+    if(!g) return;
+    if(!g.nurGenickt) gespraechBlase(pick(['herz','lach','daumen','note']));
+    g.schritt++;
+  },
+  next(){
+    const g = coffee.gespraech;
+    if(!g) return null;
+    if(g.abgenickt >= 2) return 'queueTalkEnde';      // zweimal abgenickt: es schläft ein
+    if(!gespraechZeile())  return 'queueTalkEnde';    // Thema durch
+    return 'queueTalk1';
+  }};
+DIALOGS.queueTalkEnde = { who:'sys', name:'',
+  text(){
+    return coffee.endeAbgenickt
+      ? 'Ihr schaut beide wieder nach vorne. War wohl nichts.'
+      : 'Ihr schweigt einen Moment. Angenehmes Schweigen.';
+  },
+  onEnter(){
+    // erst merken, wie es ausging – danach erst aufräumen
+    const g = coffee.gespraech;
+    coffee.endeAbgenickt = !!(g && g.abgenickt >= 2);
+    coffee.gespraech = null;
+    coffee.ansprache = null;
+    coffee.anspracheCool = 60 + Math.random()*50;     // längere Ruhe danach
+  },
+  next:null };
+
+DIALOGS.queueJoin1 = { who:'sys', name:'Café-Van',
+  text(){
+    const n = coffee.queue.length;
+    if(n===0) return 'Niemand da. Die Maschine zischt vor sich hin.';
+    if(n<6)   return 'Ein paar Leute stehen an. Geht schnell.';
+    if(n<12)  return 'Ordentlich was los. Das dauert.';
+    return 'Die Schlange reicht fast bis zum Knick. Aber der Kaffee soll gut sein.';
+  },
+  choices:[
+    { t:'Anstellen',     next:'queueJoin2' },
+    { t:'Lieber nicht',  next:null }
+  ]};
+DIALOGS.queueJoin2 = { who:'sys', name:'',
+  text(){ return 'Du stellst dich hinten an. Vor dir: '+(coffee.queue.length-1)+'.'; },
+  onEnter(){
+    const p = neuerAnsteher(coffee.queue.length, true);
+    p.istSpieler = true;
+    coffee.queue.push(p);
+    coffee.playerIdx = coffee.queue.length-1;
+    coffee.stehZeit = 0;
+    toast('Mit E kannst du die Schlange jederzeit wieder verlassen.');
+  },
+  next:null };
+DIALOGS.queueLeave1 = { who:'sys', name:'Schlange',
+  text(){ return coffee.playerIdx===0 ? 'Du bist als Nächstes dran.' : 'Vor dir stehen noch '+coffee.playerIdx+'.'; },
+  choices:[
+    { t:'Weiter warten',     next:null },
+    { t:'Jemanden ansprechen', next:'queueSmalltalk1' },
+    { t:'Keinen Bock mehr',  next:'queueLeave2' }
+  ]};
+// Selbst jemanden ansprechen
+DIALOGS.queueSmalltalk1 = { who:'sys', name:'',
+  text(){ return nachbarDa() ? 'Du drehst dich zu der Person neben dir.' : 'Neben dir steht gerade niemand.'; },
+  onEnter(){
+    const i = nachbarIndex();
+    if(i<0) return;
+    coffee.queue[i].chat = { t:3.2, icon:pick(['tasse','note','frage','kuhDurch']), role:'ask' };
+  },
+  next(){ return nachbarDa() ? 'queueSmalltalk2' : null; } };
+DIALOGS.queueSmalltalk2 = { who:'sys', name:'',
+  text(){ return pick([
+    'Ihr redet kurz über die Schlange. Sie ist zu lang, da seid ihr euch einig.',
+    'Kurzes Gespräch über die Bands heute Abend.',
+    'Ihr beschwert euch gemeinsam über den Preis. Es hilft nichts, aber es tut gut.'
+  ]); },
+  onEnter(){
+    const i = nachbarIndex();
+    if(i>=0) coffee.queue[i].chat = { t:3.2, icon:pick(['herz','daumen','lach']), role:'ask' };
+    coffee.ansprache = null;
+  },
+  next:null };
+// Auf eine Ansprache reagieren
+DIALOGS.queueAntwort1 = { who:'sys', name:'',
+  text:'Die Person neben dir sagt etwas zu dir.', choices:[
+    { t:'Antworten',      next:'queueAntwort2' },
+    { t:'Nur nicken',     next:'queueAntwort3' }
+  ]};
+DIALOGS.queueAntwort2 = { who:'sys', name:'',
+  text:'Ihr kommt ins Gespräch. Die Wartezeit fühlt sich kürzer an.',
+  onEnter(){
+    const i = coffee.ansprache ? coffee.ansprache.idx : -1;
+    if(i>=0 && coffee.queue[i]) coffee.queue[i].chat = { t:3.2, icon:pick(['herz','lach','daumen']), role:'ask' };
+    coffee.ansprache = null;
+  },
+  next:null };
+DIALOGS.queueAntwort3 = { who:'sys', name:'', text:'Du nickst nur. Das war es dann auch.',
+  onEnter(){ coffee.ansprache = null; }, next:null };
+DIALOGS.queueLeave2 = { who:'sys', name:'', text:'Du trittst aus der Schlange.',
+  onEnter(){ spielerAusSchlange(); }, next:null };
+DIALOGS.coffeeEmpty1 = { who:'sys', name:'Café-Van',
+  text(){ return baristaJetzt().name + ': "Milch ist alle. Nachschub ist unterwegs, gib mir zehn Minuten."'; },
+  next:null };
+
+
+/* --- Die Bestellung am Tresen --- */
+DIALOGS.bestell1 = { who:'sys', name(){ return baristaJetzt().name; },
+  text(){ return state.flags.milchDone ? 'Ah, du. Was darf es sein?' : 'Was darf\'s sein.'; },
+  choices(){
+    const c = [
+      { t:'Kaffee, schwarz',    next:'bestell2' },
+      { t:'Mit Hafermilch',     next:'bestell2' },
+      { t:'Doppelten Espresso', next:'bestell2' }
+    ];
+    if(!coffee.quatschGenutzt) c.push({ t:'Kurz quatschen', next:'tresenQuatsch' });
+    return c;
+  }};
+// Smalltalk am Tresen: je nach Lage Abfuhr oder echtes Gespräch,
+// danach fragt die Bedienung nochmal, was es denn sein darf.
+DIALOGS.tresenQuatsch = { who:'sys', name:'', text:'',
+  onEnter(){
+    coffee.gespraechMit = null;
+    coffee.quatschGenutzt = true;
+    if(!state.flags.milchDone)      return 'tresenAbfuhr';
+    if(coffee.queue.length >= 6)    return 'tresenStress';
+    return 'tresenPlausch';
+  },
+  next:null };
+DIALOGS.tresenAbfuhr = { who:'sys', name(){ return baristaJetzt().name; },
+  text(){ return pick([
+    'Ehrlich? Ich hab gerade wenig Lust auf Gespräche. Vor allem mit dir.',
+    'Wir kennen uns von gestern Nacht. Das reicht mir erstmal.',
+    'Lass gut sein, ja?'
+  ]); },
+  next:'bestellNochmal' };
+DIALOGS.tresenStress = { who:'sys', name(){ return baristaJetzt().name; },
+  text(){ return pick([
+    'Schau dir die Schlange an. Später, ja?',
+    'Gerade schlecht. Da hinten stehen noch zwölf Leute.',
+    'Ich würde ja gern, aber nicht jetzt.'
+  ]); },
+  onEnter(){ addSympathy(baristaJetzt().id, -1); },
+  next:'bestellNochmal' };
+DIALOGS.tresenPlausch = { who:'sys', name(){ return baristaJetzt().name; },
+  text(){ return pick([
+    'Ist gerade ruhig, da geht was. Die Maschine läuft, ich beschwere mich nicht.',
+    'Heute Nacht spielt jemand auf der Waldbühne, den ich mag. Da will ich hin.',
+    'Wir wechseln alle acht Stunden. Ich hab die schlimmste erwischt, aber egal.'
+  ]); },
+  onEnter(){ addSympathy(baristaJetzt().id, smalltalkWert()); },
+  next:'bestellNochmal' };
+DIALOGS.bestellNochmal = { who:'sys', name(){ return baristaJetzt().name; },
+  text(){ return pick(['Also. Was darf es sein?','Und jetzt? Was nimmst du?','Zurück zum Kaffee: was soll es sein?']); },
+  choices:[
+    { t:'Kaffee, schwarz',    next:'bestell2' },
+    { t:'Mit Hafermilch',     next:'bestell2' },
+    { t:'Doppelten Espresso', next:'bestell2' }
+  ]};
+DIALOGS.bestell2 = { who:'sys', name(){ return baristaJetzt().name; },
+  text(){ return pick(['Kommt sofort.','Zwei Minuten.','Mhm.']); },
+  onEnter(){
+    coffee.vorrat--;
+    state.energy = clamp(state.energy + 28, 0, 100);
+    if(!state.flags.kaffeeGeholt){
+      state.flags.kaffeeGeholt = true;
+      state.journal.memories.push('Beim Café-Van angestellt und einen Kaffee bekommen.');
+    }
+    if(coffee.vorrat<=0 && !coffee.nachschub){ coffee.nachschub=1; spawnRunner(true); }
+  },
+  next:'bestell3' };
+DIALOGS.bestell3 = { who:'sys', name:'', text:'Kaffee! Energie aufgefüllt.', next:'bestell4' };
+DIALOGS.bestell4 = { who:'sys', name:'',
+  text:'Der Becher ist warm. Du könntest jetzt einfach gehen.',
+  choices(){
+    const c = [{ t:'Dankeschön :)', next:'bestellDank' }];
+    if(!state.flags.milchMission) c.push({ t:'Braucht ihr grad was?', next:'milchFrage1' });
+    c.push({ t:'Kurz quatschen', next:'bestellQuatsch' });
+    return c;
+  }};
+// Ob Smalltalk ankommt, hängt an der Mission und daran, wie voll es gerade ist
+DIALOGS.bestellQuatsch = { who:'sys', name:'', text:'',
+  onEnter(){
+    coffee.gespraechMit = null;
+    if(!state.flags.milchDone) return 'teamAbfuhr1';
+    if(coffee.queue.length >= 6) return 'teamBeschaeftigt1';
+    return 'teamSmalltalk1';
+  },
+  next:null };
+DIALOGS.teamBeschaeftigt1 = { who:'sys', name(){ return (coffee.gespraechMit||baristaJetzt()).name; },
+  text(){ return pick([
+    'Schau dir die Schlange an. Später, ja?',
+    'Gerade schlecht. Da hinten stehen noch zwölf Leute.',
+    'Ich würde ja gern, aber nicht jetzt.'
+  ]); },
+  onEnter(){
+    const ziel = coffee.gespraechMit || baristaJetzt();
+    addSympathy(ziel.id, -1);
+    coffee.gespraechMit = null;
+  },
+  next:null };
+DIALOGS.bestellDank = { who:'sys', name(){ return baristaJetzt().name; },
+  text(){ return state.flags.milchDone
+    ? pick(['Immer gerne.','Bis später!','Komm wieder, wenn es leerer ist.'])
+    : pick(['Jo.','Hm.','Der Nächste bitte.']); },
+  onEnter(){ if(state.flags.milchDone) kaffeeSympathie(1); },
+  next:null };
+
+/* --- Die Milch-Mission --- */
+DIALOGS.milchFrage1 = { who:'sys', name(){ return baristaJetzt().name; },
+  text:'...Eigentlich schon, ja.', next:'milchFrage2' };
+DIALOGS.milchFrage2 = { who:'sys', name(){ return baristaJetzt().name; },
+  text:'Uns geht die Hafermilch aus und unser Runner hängt seit einer Stunde am anderen Ende fest.', next:'milchFrage3' };
+DIALOGS.milchFrage3 = { who:'sys', name(){ return baristaJetzt().name; },
+  text:'Im Kühlwagen drüben liegen noch Kartons. Wenn du sie holst, wäre uns sehr geholfen.',
+  onEnter(){
+    if(!state.flags.milchMission){
+      state.flags.milchMission = true;
+      state.journal.missions.push({key:'milch', done:false});
+      state.journal.memories.push('Der Café-Van braucht Hafermilch aus dem Kühlwagen.');
+    }
+  },
+  next:null };
+DIALOGS.milchNehmen1 = { who:'sys', name:'Kühlwagen',
+  text:'Im Fach ganz unten stapeln sich Kartons Hafermilch.', choices:[
+    { t:'Zwei mitnehmen', next:'milchNehmen2' },
+    { t:'Später',         next:null }
+  ]};
+DIALOGS.milchNehmen2 = { who:'sys', name:'', text:'Du hast HAFERMILCH erhalten!',
+  onEnter(){ giveItem('milch',1); },
+  next:null };
+DIALOGS.milchAbgabe1 = { who:'sys', name(){ return baristaJetzt().name; },
+  text:'Oh. Oh! Die hast du wirklich geholt.',
+  onEnter(){
+    const it = getItem('milch');
+    if(it){ it.n--; if(it.n<=0) removeItem(it); }
+    state.flags.milchDone = true;
+    coffee.vorrat = 24; coffee.nachschub = 0;
+    for(const m of coffee.team) addSympathy(m.id, 4);
+    const mi = state.journal.missions.find(m=>m.key==='milch');
+    if(mi) mi.done = true;
+    state.journal.memories.push('Dem Café-Team Hafermilch gebracht. Sie tauen langsam auf.');
+  },
+  next:'milchAbgabe2' };
+DIALOGS.milchAbgabe2 = { who:'sys', name(){ return baristaJetzt().name; },
+  text:'Wir waren dir gegenüber vielleicht etwas kurz angebunden. Hat Gründe. Aber das hier war anständig.', next:'milchAbgabe3' };
+DIALOGS.milchAbgabe3 = { who:'sys', name:'', text:'Das Café-Team taut auf. Ab jetzt kann man mit ihnen reden.', next:null };
+
+/* --- Smalltalk: vorher Abfuhr, nachher je nach Andrang --- */
+DIALOGS.teamAbfuhr1 = { who:'sys', name(){ return (coffee.gespraechMit||baristaJetzt()).name; },
+  text(){ return pick([
+    'Hm. Ich hab gerade wenig Lust auf Gespräche. Vor allem mit dir.',
+    'Wir kennen uns von gestern Nacht. Reicht mir erstmal.',
+    'Lass gut sein, ja?'
+  ]); },
+  next:null };
+DIALOGS.teamSmalltalk1 = { who:'sys', name(){ return (coffee.gespraechMit||baristaJetzt()).name; },
+  text(){
+    const n = coffee.queue.length;
+    if(n>=6) return 'Jetzt gerade? Schau dir die Schlange an.';
+    if(n<=2) return 'Ist gerade ruhig. Was gibt es?';
+    return 'Kurz, ja?';
+  },
+  choices:[
+    { t:'Wie läuft es heute?', next:'teamSmalltalk2' },
+    { t:'Nichts, schon gut.',  next:null }
+  ]};
+DIALOGS.teamSmalltalk2 = { who:'sys', name(){ return (coffee.gespraechMit||baristaJetzt()).name; },
+  text(){
+    const w = smalltalkWert();
+    if(w<0) return 'Ehrlich? Schlechter Moment. Später.';
+    if(w>=2) return pick([
+      'Ganz gut. Die Maschine läuft, die Sonne scheint, ich beschwere mich nicht.',
+      'Heute Nacht spielt jemand auf der Waldbühne, den ich mag. Da will ich hin.',
+      'Wir wechseln alle acht Stunden. Ich hab die schlimmste erwischt, aber egal.'
+    ]);
+    return 'Läuft. Viel zu tun.';
+  },
+  onEnter(){
+    const w = smalltalkWert();
+    const ziel = coffee.gespraechMit || baristaJetzt();
+    if(w) addSympathy(ziel.id, w);
+    coffee.gespraechMit = null;
+  },
+  next:null };
 
 DIALOGS.kipFirst1 = { who:'kip', text:'Oh. Du bist es.', next:'kipFirst2' };
 DIALOGS.kipFirst2 = { who:'kip', text:'Na, wieder unter den Lebenden?',
@@ -2984,6 +4583,31 @@ function chatsUpdate(dt){
 }
 
 /* --- Sprechblase über dem Kopf; nachts leuchtet sie leicht --- */
+// Eine Sprechblase an einer festen Stelle, unabhängig von einer Figur
+function drawBubbleAt(x, y, iconName, alpha){
+  const icon = CHAT_ICONS[iconName];
+  if(!icon) return;
+  const bx = Math.round(x)-6, by = Math.round(y)-6;
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha==null?1:alpha));
+  const d = darkness();
+  if(d > 0.15){
+    ctx.save();
+    ctx.globalCompositeOperation='lighter';
+    const g=ctx.createRadialGradient(bx+6,by+6,1, bx+6,by+6,18);
+    g.addColorStop(0,'rgba(255,235,190,'+(0.30*d).toFixed(3)+')');
+    g.addColorStop(1,'rgba(255,220,160,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(bx+6,by+6,18,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle='#5a4632'; ctx.fillRect(bx-1,by-1,15,15);
+  ctx.fillStyle='#fdf3dc'; ctx.fillRect(bx,by,13,13);
+  ctx.fillStyle='#5a4632'; ctx.fillRect(bx+5,by+13,3,2); ctx.fillRect(bx+6,by+15,2,1);
+  ctx.fillStyle='#fdf3dc'; ctx.fillRect(bx+5,by+13,2,1);
+  icon(bx+2, by+2);
+  ctx.restore();
+}
+
 function drawChatBubble(e){
   const c = e.chat;
   if(!c || c.t<=0) return;
@@ -3194,6 +4818,7 @@ function saveGame(slot){
     clock: { min: Math.round(state.clock.min), day: state.clock.day },
     scene: state.scene,
     onBike: state.onBike,
+    coffee: { vorrat: coffee.vorrat },
     flashlight: state.flashlight,
     outdoorPos: state.outdoorPos
   };
@@ -3262,6 +4887,10 @@ function loadGame(s){
     state.clock.day = Math.max(1, s.clock?.day ?? 1);
     state.scene = s.scene || (s.indoor ? 'tent' : 'camp');
     state.onBike = !!s.onBike;
+    // Schlange und Team frisch aufbauen, nur der Vorrat bleibt erhalten
+    coffee.queue.length = 0; coffee.playerIdx = -1; coffee.nachschub = 0;
+    coffee.vorrat = (s.coffee && typeof s.coffee.vorrat==='number') ? s.coffee.vorrat : 24;
+    foodCrowd.length = 0; foodRunners.length = 0;
     state.flashlight = !!s.flashlight;
     state.outdoorPos = s.outdoorPos ?? null;
     state.fade = 0; state.fadeDir = 0;
@@ -3298,6 +4927,34 @@ function findCandidate(){
     for(const o of tentObjects){
       const d=Math.hypot(o.ax-px, o.ay-4-py);
       if(d<bestD){ bestD=d; best={x:o.ax, y:o.ay-24, act:()=>o.talk(o)}; }
+    }
+    currentCandidate = best;
+    return;
+  }
+  // Auf der Waldbühne
+  if(state.scene==='wald'){
+    for(const o of waldObjects){
+      if(!o.text && !o.talk) continue;
+      const d=Math.hypot(o.ax-px, o.ay-4-py);
+      if(d<bestD){ bestD=d; best={x:o.ax, y:o.ay-24, act:()=> o.talk ? o.talk(o) : objTalk(o)}; }
+    }
+    currentCandidate = best;
+    return;
+  }
+  // Im Foodcourt
+  if(state.scene==='food'){
+    // Wer gerade frei hat, steht herum und lässt sich ansprechen
+    const dienst = schichtIndex();
+    for(let i=0;i<coffee.team.length;i++){
+      if(i===dienst) continue;
+      const m = coffee.team[i];
+      const d = Math.hypot(m.x-px, m.y-6-py);
+      if(d<bestD){ bestD=d; best={x:m.x, y:m.y-20, act:()=>teamTalk(m)}; }
+    }
+    for(const o of foodObjects){
+      if(!o.text && !o.talk) continue;
+      const d=Math.hypot(o.ax-px, o.ay-4-py);
+      if(d<bestD){ bestD=d; best={x:o.ax, y:o.ay-24, act:()=> o.talk ? o.talk(o) : objTalk(o)}; }
     }
     currentCandidate = best;
     return;
@@ -3406,6 +5063,7 @@ function speakerName(node){
   if(node.who==='kip')    return 'Kip';
   if(node.who==='vera')   return 'Vera';
   if(node.who==='rocco')  return 'Rocco';
+  if(typeof node.name==='function') return node.name();
   return node.name||'';
 }
 
@@ -3442,6 +5100,10 @@ function collectLights(){
     }
   } else if(state.scene==='stage'){
     for(const l of stageLights) out.push(l);
+  } else if(state.scene==='food'){
+    for(const l of foodLights) out.push(l);
+  } else if(state.scene==='wald'){
+    for(const l of waldLights) out.push(l);
   }
   // Taschenlampe: gerichteter Kegel plus schwacher Schein direkt um den Spieler
   if(state.flashlight){
@@ -3613,7 +5275,8 @@ function drawDialog(){
     return;
   }
   const full=nodeText(node);
-  if(node.who==='sys'){
+  // Die schmale Systembox kennt keine Auswahl – dafür das große Feld verwenden
+  if(node.who==='sys' && !nodeChoices(node)){
     ctx.font='bold 10px monospace';
     const tw=Math.min(360, ctx.measureText(full).width);
     const bw=Math.max(200, tw+40), bh=60;
@@ -3622,7 +5285,7 @@ function drawDialog(){
     drawStar(bx+8,by+8); drawStar(bx+bw-14,by+8);
     ctx.fillStyle='#3b2f2f'; ctx.textBaseline='top';
     drawWrapped(full.slice(0,Math.floor(d.chars)), bx+18, by+14, bw-36, 12);
-    if(node.name) nameTag(node.name,bx+6,by-9);
+    { const nm = speakerName(node); if(nm) nameTag(nm,bx+6,by-9); }
     if(d.chars>=full.length) blinkArrow(bx+bw-14,by+bh-9);
     d.choiceCount=0;
     return;
@@ -4087,6 +5750,45 @@ function update(dt){
     if(interactQueued){ interactQueued=false; tryInteract(); }
     return;
   }
+  // Auf der Waldbühne: laufen und Gegenstände
+  if(state.scene==='wald'){
+    playerUpdate(dt);
+    statusUpdate(dt);
+    // Unten in der Mitte hinaus geht es zurück zum Foodcourt
+    if(player.y > WALD.H*TILE - 22 && player.x > 10*TILE && player.x < 18*TILE){
+      leaveWald();
+      interactQueued=false;
+      return;
+    }
+    findCandidate();
+    if(interactQueued){ interactQueued=false; tryInteract(); }
+    return;
+  }
+  // Im Foodcourt: laufen, Publikum, Kaffee
+  if(state.scene==='food'){
+    if(!spielerStehtAn()) playerUpdate(dt);   // in der Schlange steht man still
+    statusUpdate(dt);
+    particlesUpdate(dt);
+    foodCrowdUpdate(dt);
+    foodRunnersUpdate(dt);
+    coffeeTeamUpdate(dt);
+    coffeeUpdate(dt);
+    // In der Schlange erreicht man den Van nicht mehr – E öffnet trotzdem
+    if(spielerStehtAn()){
+      currentCandidate = null;
+      if(interactQueued){ interactQueued=false; vanTalk(); }
+      return;
+    }
+    // Links unten hinaus geht es zurück zum Campingplatz
+    if(!spielerStehtAn() && player.x < 3*TILE-6 && player.y > 22*TILE && player.y < 28*TILE){
+      leaveFood();
+      interactQueued=false;
+      return;
+    }
+    findCandidate();
+    if(interactQueued){ interactQueued=false; tryInteract(); }
+    return;
+  }
   // Auf dem Festivalgelände: laufen, Crew, Gegenstände
   if(state.scene==='stage'){
     playerUpdate(dt);
@@ -4214,6 +5916,8 @@ function draw(){
   if(state.mode==='create'){ drawCreation(); drawToasts(); return; }
   if(state.scene==='tent'){ drawIndoor(); return; }
   if(state.scene==='stage'){ drawStage(); return; }
+  if(state.scene==='food'){ drawFood(); return; }
+  if(state.scene==='wald'){ drawWald(); return; }
   camX=clamp(Math.round(player.x-GAME_W/2), 0, MAPW*TILE-GAME_W);
   camY=clamp(Math.round(player.y-GAME_H/2-10), 0, MAPH*TILE-GAME_H);
   const hf = highFactor();
@@ -4493,6 +6197,9 @@ function drawTouchButton(){
 /* --- Start --- */
 buildWorld();
 buildStage();
+buildFood();
+buildWald();
+buildCoffeeTeam();
 addNPC('harvey','Harvey',120,116,HARVEY_PAL,HARVEY_GRIDS,PORTRAIT_HARVEY,PORTRAIT_HARVEY_PAL,harveyTalk);
 addNPC('friend','???',588,468,FRIEND_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
 addNPC('kobi','Kobi',632,86,KOBI_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_KOBI_PAL,kobiTalk);
