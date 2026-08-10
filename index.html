@@ -3,6 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="dataluma">
+<meta name="theme-color" content="#241f2e">
 <title>dataluma – Akt 1 (Prototyp)</title>
 <style>
   html,body{margin:0;height:100%;background:#241f2e;overflow:hidden;touch-action:none;overscroll-behavior:none}
@@ -69,7 +74,8 @@ const CFG = {
 };
 
 /* ============ 1. GRUNDGERÜST ============ */
-const GAME_W = 480, GAME_H = 320, TILE = 16;
+let GAME_W = 480, GAME_H = 320;               // passt sich dem Bildschirm an
+const TILE = 16;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 ctx.imageSmoothingEnabled = false;
@@ -222,9 +228,112 @@ const creation = { skin:1, hair:0, outfit:2, face:'down', t:0 };
 const FACE_CYCLE = ['down','left','up','right'];
 
 // Baut aus den gewählten Farben die Farbtabelle für die Spielfigur
+
+/* ============ SPIELFIGUR: gezeichnetes Sprite (12x20) ============
+   Vorderansicht stammt aus Joshuas Zeichnung, Pixel für Pixel übernommen.
+   Rück- und Seitenansicht sind daraus abgeleitet.
+   Farbschlüssel: o Umriss · n/N Mütze und Hose · h/d/M/R Haar ·
+   s/S/A Haut · w/W Augenweiß · i/I Iris · l/L Shirt · J Jacke ·
+   u/U Gürtel · r/v Anstecker */
+const HERO_DOWN = [
+  '   oNNNNo   ',
+  '  onnnnnNo  ',
+  ' onrNnnnnNo ',
+  'onnnvNnnnnNo',
+  'onoooooooono',
+  'ooddhMhdMdoo',
+  'sRhMhhssshRs',
+  'ShRRMhsRRRdS',
+  'ohwiRhsRiwho',
+  'odWIwsswIWho',
+  'odAssssssAo ',
+  'oMoSSSSSSo  ',
+  'ohooooooolo ',
+  'oolllllllllo',
+  'oJJllJJllJJo',
+  'ssoLLLLLLoss',
+  'SsoooooooosS'
+];
+const HERO_UP = [
+  '   oNNNNo   ',
+  '  onnnnnNo  ',
+  ' onnnnnnnNo ',
+  'onnnnnNnnnNo',
+  'onoooooooono',
+  'ooddhMhdMdoo',
+  'sdhMhhhhhMds',
+  'SdhhMhhMhhdS',
+  'odhhhhhhhhdo',
+  'odhhMhhMhhdo',
+  'odhhhhhhhho ',
+  'oModdddddo  ',
+  'ohooooooolo ',
+  'oolllllllllo',
+  'ooJllllllJoo',
+  'ssoLLLLLLoss',
+  'SsoooooooosS'
+];
+const HERO_SIDE = [   // schaut nach links, für rechts gespiegelt
+  '  oNNNNo    ',
+  ' onnnnnNo   ',
+  ' onrnnnnNo  ',
+  'onnnnnnnnNo ',
+  'onooooooono ',
+  'oddhMhhdMdo ',
+  'sRhssshhhRo ',
+  'ShwissRhRdo ',
+  'ohWIsshRRho ',
+  'odAsshhhRho ',
+  'odssshhhho  ',
+  'oMoSShhho   ',
+  'ohoooooolo  ',
+  'oollllllllo ',
+  'oJJllllllJo ',
+  'ssoLLLLLLoo ',
+  'SsooooooooS '
+];
+// Beine: Ruhe und zwei Laufbilder
+const HERO_LEGS_IDLE = [
+  'oooouuuuoooo',
+  ' onnoUUonno ',
+  ' oNNnoonNNo '
+];
+const HERO_LEGS_A = [
+  'oooouuuuoooo',
+  ' onnoUUonno ',
+  ' oNNNooonNo '
+];
+const HERO_LEGS_B = [
+  'oooouuuuoooo',
+  ' onnoUUonno ',
+  ' oNoooonNNNo'
+];
+const HERO_GRIDS = { down:HERO_DOWN, up:HERO_UP, side:HERO_SIDE,
+  bodyRows:17, legsSet:{ idle:HERO_LEGS_IDLE, a:HERO_LEGS_A, b:HERO_LEGS_B } };
+
+// Ergänzt eine vorhandene Figurenpalette um die Töne, die das neue Sprite braucht.
+// So behalten Charaktereditor und alle NPCs ihre eigenen Farben.
+function heldenPalette(pal){
+  const p = Object.assign({}, pal);
+  p.o = '#151015';                                   // harter dunkler Umriss
+  const hose = pal.p || '#474c66';
+  p.n = hose;              p.N = shade(hose,-0.22);  // Mütze und Hose
+  p.h = pal.h;             p.d = pal.d;              // Haar wie gehabt
+  p.M = shade(pal.h,-0.12); p.R = shade(pal.d,-0.34);
+  p.s = pal.s;             p.S = pal.S;
+  p.A = shade(pal.s,-0.14);                          // Wange
+  p.w = '#ffffff';         p.W = '#e4e4e4';
+  p.i = '#e1b83d';         p.I = '#c7b26d';          // Augen
+  p.l = pal.c;             p.L = shade(pal.c,-0.16); // Shirt
+  p.J = shade(pal.k,-0.35);                          // offene Jacke
+  p.u = '#5d737d';         p.U = '#52666f';          // Gürtel
+  p.r = '#b05e55';         p.v = '#3171a6';          // Anstecker an der Mütze
+  return p;
+}
+
 function playerPal(){
   const s=SKINS[creation.skin], h=HAIRS[creation.hair], o=OUTFITS[creation.outfit];
-  return { o:'#4a3a35', h:h.h, d:h.d, s:s.s, S:s.S, e:'#2e2430',
+  return heldenPalette({ o:'#4a3a35', h:h.h, d:h.d, s:s.s, S:s.S, e:'#2e2430',
            c:o.c, k:o.k, p:'#474c66', b:'#6d4a2f',
            // abgeleitete Detail-Töne fürs HD-Sprite (passen sich der Farbwahl an):
            H:shade(h.h, 0.28),    // Haar-Glanzlicht
@@ -234,7 +343,7 @@ function playerPal(){
            P:shade('#474c66', -0.25), // Hosen-Schatten
            g:'#e8c35c',           // Gold: Anhänger & Gürtelschnalle
            B:shade('#6d4a2f', 0.3),   // Schuhglanz
-           q:'#8a5a34', Q:'#6d4426' };  // Rucksack (Rückansicht)
+           q:'#8a5a34', Q:'#6d4426' });  // Rucksack (Rückansicht)
 }
 const HARVEY_PAL = { o:'#4a3a35', t:'#77714a', T:'#5b5636', s:'#eec39a', S:'#d1a06f',
                      e:'#2e2430', f:'#cfc6b8', h:'#cfc6b8', d:'#b7ad9e',
@@ -1226,9 +1335,10 @@ function drawObject(o){
 
 /* ============ 6. FIGUREN & BEWEGUNG ============ */
 const player = { x:204, y:150, facing:'down', moving:false, animT:0, frame:0,
-                 pal:null, gridSet:PLAYER_GRIDS };
+                 pal:null, gridSet:HERO_GRIDS };
 const npcs = [];
 function addNPC(id,name,x,y,pal,gridSet,portrait,pPal,talk){
+  pal = heldenPalette(pal);   // fehlende Töne fürs neue Sprite ergänzen
   const n = { id, name, x, y, facing:'down', moving:false, animT:0, frame:0,
               pal, gridSet, portrait, pPal, talk };
   npcs.push(n);
@@ -1332,7 +1442,7 @@ function drawEntity(e){
   const legs = e.moving ? (e.frame===1?legsSet.a : e.frame===3?legsSet.b : legsSet.idle) : legsSet.idle;
   const grid = baseGrid.slice(0,bodyRows).concat(legs);
   const bob = (e.moving && (e.frame===1||e.frame===3)) ? -1 : 0;
-  const sx = Math.round(e.x-6), sy = Math.round(e.y-16+bob);
+  const sx = Math.round(e.x-6), sy = Math.round(e.y-grid.length*cell+bob);
   ctx.fillStyle='rgba(50,35,25,0.25)';
   ctx.fillRect(sx+2, Math.round(e.y)-1, 8, 2);
   drawGrid(grid, e.pal, sx, sy, flip, cell);
@@ -1650,9 +1760,9 @@ function buildStage(){
 
   // --- Crew ---
   stageNpcs.push({ id:'vera', name:'Vera', x:22*TILE, y:12*TILE+8, facing:'down',
-    moving:false, animT:0, frame:0, pal:VERA_PAL, gridSet:PLAYER_GRIDS, talk:veraTalk });
+    moving:false, animT:0, frame:0, pal:VERA_PAL, gridSet:HERO_GRIDS, talk:veraTalk });
   stageNpcs.push({ id:'rocco', name:'Rocco', x:10*TILE+16, y:6*TILE+8, facing:'left',
-    moving:false, animT:0, frame:0, pal:ROCCO_PAL, gridSet:PLAYER_GRIDS, talk:roccoTalk });
+    moving:false, animT:0, frame:0, pal:ROCCO_PAL, gridSet:HERO_GRIDS, talk:roccoTalk });
 
   // --- Licht: Scheinwerfer auf der Bühne, Arbeitslicht backstage ---
   addStageLightSrc(17*TILE, 4*TILE, 120, '255,80,160', 0.8, 'sweep');
@@ -2333,7 +2443,7 @@ function buildCoffeeTeam(){
   ];
   for(let i=0;i<3;i++){
     coffee.team.push({
-      id:'kaffee'+i, name:KAFFEE_NAMEN[i], pal:pals[i], gridSet:PLAYER_GRIDS,
+      id:'kaffee'+i, name:KAFFEE_NAMEN[i], pal:heldenPalette(pals[i]), gridSet:HERO_GRIDS,
       x:VAN.schattenX + (i-1)*15, y:VAN.schattenY + (i%2?5:0), facing:'down',
       moving:false, animT:Math.random(), frame:0,
       modus:'pause', modusT:5+Math.random()*20, ziel:null, chat:null, chatCool:3
@@ -2360,7 +2470,7 @@ function wuerfleSchlange(){
 function neuerAnsteher(idx, sofort){
   const s = queueSpot(idx||0);
   const start = sofort ? s : { x: s.x + 40 + Math.random()*40, y: s.y + 14 + Math.random()*10 };
-  return { pal:randomWandererPal(), gridSet:PLAYER_GRIDS, facing:'up',
+  return { pal:randomWandererPal(), gridSet:HERO_GRIDS, facing:'up',
            moving:false, animT:Math.random()*2, frame:0,
            x:start.x, y:start.y, chat:null, chatCool:1+Math.random()*6, istSpieler:false };
 }
@@ -2403,7 +2513,7 @@ function spawnFoodPerson(){
     scene:'food',
     x:ein.x+(Math.random()*20-10), y:ein.y+(Math.random()*20-10),
     facing:'down', moving:true, animT:Math.random()*2, frame:0,
-    pal:randomWandererPal(), gridSet:PLAYER_GRIDS,
+    pal:randomWandererPal(), gridSet:HERO_GRIDS,
     route: ein.id==='camp'
       ? [{x:FOOD_CORNER.x+(Math.random()*40-20), y:FOOD_CORNER.y+(Math.random()*30-15)}, {x:aus.x, y:aus.y}]
       : [{x:FOOD_CORNER.x+(Math.random()*40-20), y:FOOD_CORNER.y+(Math.random()*30-15)}, {x:aus.x, y:aus.y}],
@@ -2489,7 +2599,7 @@ function spawnRunner(fuerKaffee){
   const ziel = fuerKaffee ? {x:VAN.lukeX, y:VAN.base+6} : pick(ziele);
   foodRunners.push({
     x:RUNNER_LAGER.x, y:RUNNER_LAGER.y, facing:'up', moving:true,
-    animT:Math.random(), frame:0, pal:randomWandererPal(), gridSet:PLAYER_GRIDS,
+    animT:Math.random(), frame:0, pal:randomWandererPal(), gridSet:HERO_GRIDS,
     kiste:true, kaffee:!!fuerKaffee,
     route:[{x:FOOD_CORNER.x, y:FOOD_CORNER.y}, ziel, {x:RUNNER_LAGER.x, y:RUNNER_LAGER.y}],
     speed: 46+Math.random()*14, travelT:0
@@ -4459,6 +4569,9 @@ let wandererRespawnT = 0;
 
 // Würfelt ein Aussehen aus den Erstellungs-Paletten zusammen
 function randomWandererPal(){
+  return heldenPalette(_wandererPalRoh());
+}
+function _wandererPalRoh(){
   const s=pick(SKINS), h=pick(HAIRS), o=pick(OUTFITS);
   return { o:'#4a3a35', h:h.h, d:h.d, s:s.s, S:s.S, e:'#2e2430',
            c:o.c, k:o.k, p:pick(['#474c66','#5d5346','#3f4457','#6d4a2f']), b:'#6d4a2f' };
@@ -4649,7 +4762,7 @@ function spawnWanderer(){
   wanderers.push({
     x:entry.x+(Math.random()*24-12), y:entry.y,
     facing:'down', moving:true, animT:Math.random()*2, frame:0,
-    pal:randomWandererPal(), gridSet:PLAYER_GRIDS,
+    pal:randomWandererPal(), gridSet:HERO_GRIDS,
     entry:entry.id, dest:dest.id,
     route:buildRoute(entry,dest),
     travelT:0, stuckT:0,
@@ -5331,12 +5444,13 @@ function drawDialog(){
 
 function drawMenu(){
   ctx.fillStyle='rgba(25,20,35,0.72)'; ctx.fillRect(0,0,GAME_W,GAME_H);
-  const px=16,py=16,pw=448,ph=288;
+  const px=16,py=16,pw=GAME_W-32,ph=GAME_H-32;
   panel(px,py,pw,ph);
-  const tabs=[['bag','Tasche'],['status','Status'],['journal','Journal']];
+  const tabs=[['bag','Tasche'],['status','Status'],['journal','Journal'],['optionen','Optionen']];
   ctx.textBaseline='top';
-  for(let i=0;i<3;i++){
-    const tx=px+12+i*96, ty=py+8, tw=88, th=18;
+  const tw = Math.min(88, Math.floor((pw-56)/tabs.length)-6);
+  for(let i=0;i<tabs.length;i++){
+    const tx=px+12+i*(tw+6), ty=py+8, th=18;
     const active = state.menu.tab===tabs[i][0];
     ctx.fillStyle = active ? '#e8d9b5' : '#cbb98f';
     ctx.fillRect(tx,ty,tw,th);
@@ -5351,7 +5465,38 @@ function drawMenu(){
   region(cx,cy,18,18,()=>{ state.menu=null; });
   if(state.menu.tab==='bag') drawBag(px,py,pw,ph);
   else if(state.menu.tab==='status') drawStatus(px,py,pw,ph);
+  else if(state.menu.tab==='optionen') drawOptionen(px,py,pw,ph);
   else drawJournal(px,py,pw,ph);
+}
+
+/* --- Einstellungen: Vollbild und Bildschirm-Steuerung --- */
+function drawOptionen(px,py,pw,ph){
+  let y = py+52;
+  const zeile = (titel, zustand, wert, fn, hinweis)=>{
+    ctx.font='bold 10px monospace'; ctx.textBaseline='top';
+    ctx.fillStyle='#3b2f2f'; ctx.fillText(titel, px+22, y+5);
+    const bx = px+pw-116, bw=94, bh=20;
+    ctx.fillStyle = zustand ? '#5f9b6a' : '#a8a090';
+    ctx.fillRect(bx,by0(y),bw,bh);
+    ctx.fillStyle='#3b2f2f'; ctx.fillRect(bx,by0(y)+bh-2,bw,2);
+    ctx.font='bold 9px monospace'; ctx.fillStyle='#fdf3dc';
+    ctx.fillText(wert, bx+(bw-ctx.measureText(wert).width)/2, by0(y)+6);
+    region(bx,by0(y),bw,bh,fn);
+    if(hinweis){
+      ctx.font='8px monospace'; ctx.fillStyle='#6d5f4a';
+      ctx.fillText(hinweis, px+22, y+20);
+    }
+    y += hinweis ? 44 : 34;
+  };
+  function by0(v){ return v; }
+  zeile('Vollbild', vollbildAn(), vollbildAn()?'AN':'AUS',
+        ()=>{ vollbildUmschalten(); },
+        vollbildMoeglich() ? '' : 'Auf dem iPhone: Teilen-Menü, "Zum Home-Bildschirm".');
+  zeile('Bildschirm-Steuerung', touchUI, touchUI?'AN':'AUS',
+        ()=>{ touchUIUmschalten(); },
+        'Steuerkreuz und E-Knopf ein- oder ausblenden.');
+  ctx.font='8px monospace'; ctx.fillStyle='#6d5f4a';
+  ctx.fillText('Die Anzeige passt sich automatisch an dein Gerät an.', px+22, y+6);
 }
 
 function drawBag(px,py,pw,ph){
@@ -5510,14 +5655,15 @@ function drawMiniTent(x,base,col){
 function creationPreview(cx,baseY){
   const pal=playerPal();
   let grid, flip=false;
-  if(creation.face==='up') grid=BODY_UP;
-  else if(creation.face==='down') grid=BODY_DOWN;
-  else { grid=BODY_SIDE; flip=(creation.face==='right'); }
+  if(creation.face==='up') grid=HERO_UP;
+  else if(creation.face==='down') grid=HERO_DOWN;
+  else { grid=HERO_SIDE; flip=(creation.face==='right'); }
   const fr=Math.floor(creation.t*5)%4;
-  const legs = fr===1?LEGS_A : fr===3?LEGS_B : LEGS_IDLE;
-  // Die letzten 3 Zeilen sind die Beine (Lauf-Animation)
-  const g=grid.slice(0,13).concat(legs);
-  ctx.save(); ctx.translate(cx-36, baseY-96); ctx.scale(6,6);
+  const L=HERO_GRIDS.legsSet;
+  const legs = fr===1?L.a : fr===3?L.b : L.idle;
+  const g=grid.slice(0,HERO_GRIDS.bodyRows).concat(legs);
+  const z=5;                                   // 12x20 Sprite, mittig im Kasten
+  ctx.save(); ctx.translate(cx-6*z, baseY-20*z); ctx.scale(z,z);
   drawGrid(g,pal,0,0,flip);
   ctx.restore();
 }
@@ -5644,16 +5790,71 @@ function viewportSize(){
   return { w: vv ? vv.width : window.innerWidth,
            h: vv ? vv.height : window.innerHeight };
 }
+
+/* --- Bildschirmanpassung ---
+   Statt einer festen Auflösung mit Balken rechnen wir die Spielfläche aus dem
+   Bildschirm zurück: erst einen ganzzahligen Vergrößerungsfaktor in echten
+   Gerätepixeln wählen, dann die Spielfläche darauf zuschneiden. Dadurch ist
+   jedes Spielpixel exakt gleich groß – nichts wird verzogen oder unscharf. */
+const ZIEL_HOEHE = 320;          // ungefähr so viel Welt wollen wir sehen
 function fitCanvas(){
   const v = viewportSize();
-  const raw = Math.min(v.w/GAME_W, v.h/GAME_H);
-  const i = Math.floor(raw);
-  // Ganzzahlig nur, wenn dadurch höchstens ~15% Fläche verschenkt werden
-  SCALE = (raw>=1 && i/raw>=0.85) ? i : Math.max(0.2, raw);
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const devW = Math.max(1, Math.round(v.w * dpr));
+  const devH = Math.max(1, Math.round(v.h * dpr));
+  // Der Faktor richtet sich nach der kürzeren Seite – so passt es hochkant wie quer
+  let f = Math.round(Math.min(devW, devH) / ZIEL_HOEHE);
+  f = clamp(f, 1, 12);
+  // Spielfläche = Bildschirm geteilt durch den Faktor, auf gerade Zahlen gerundet
+  let gw = Math.floor(devW / f / 2) * 2;
+  let gh = Math.floor(devH / f / 2) * 2;
+  // Nur nach oben begrenzen (dann bleiben schmale Ränder) – niemals vergrößern,
+  // sonst ragt das Bild über den Bildschirm hinaus.
+  gw = Math.min(gw, 960);
+  gh = Math.min(gh, 720);
+  const geaendert = (gw !== GAME_W || gh !== GAME_H);
+  GAME_W = gw; GAME_H = gh;
+  SCALE = f / dpr;                       // Größe in CSS-Pixeln pro Spielpixel
+  canvas.width = GAME_W; canvas.height = GAME_H;
   canvas.style.width  = Math.round(GAME_W*SCALE)+'px';
   canvas.style.height = Math.round(GAME_H*SCALE)+'px';
+  ctx.imageSmoothingEnabled = false;
+  if(geaendert){
+    scratch.width = GAME_W;  scratch.height = GAME_H;
+    lightBuf.width = GAME_W; lightBuf.height = GAME_H;
+    layoutTouchControls();
+  }
+  if(geaendert && GAME_H > GAME_W*1.25 && !hochkantGewarnt){
+    hochkantGewarnt = true;
+    setTimeout(()=>toast('Quer gehalten siehst du mehr von der Wiese.'), 600);
+  }
   if(nameInput.style.display==='block')   placeNameInput();
   if(friendInput.style.display==='block') placeFriendInput();
+}
+let hochkantGewarnt = false;
+// Die Touch-Bedienung sitzt immer in den unteren Ecken
+function layoutTouchControls(){
+  PAD.x = 56;           PAD.y = GAME_H-56;
+  BTN_A.x = GAME_W-48;  BTN_A.y = GAME_H-48;
+}
+
+/* --- Vollbild --- */
+function vollbildMoeglich(){
+  const e = document.documentElement;
+  return !!(e.requestFullscreen || e.webkitRequestFullscreen);
+}
+function vollbildAn(){
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+function vollbildUmschalten(){
+  const e = document.documentElement;
+  try{
+    if(vollbildAn()){
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    } else {
+      (e.requestFullscreen || e.webkitRequestFullscreen).call(e);
+    }
+  }catch(err){ toast('Vollbild geht auf diesem Gerät leider nicht.'); }
 }
 
 /* ============ 12. INTRO & HAUPTSCHLEIFE ============ */
@@ -6106,6 +6307,8 @@ addEventListener('resize', fitCanvas);
 // (manche Browser melden direkt nach dem Drehen noch die alte Größe)
 addEventListener('orientationchange', ()=>{ fitCanvas(); setTimeout(fitCanvas, 250); });
 if(window.visualViewport) window.visualViewport.addEventListener('resize', fitCanvas);
+document.addEventListener('fullscreenchange', ()=>setTimeout(fitCanvas,60));
+document.addEventListener('webkitfullscreenchange', ()=>setTimeout(fitCanvas,60));
 // Pinch-Zoom unterbinden (iOS Safari ignoriert 'user-scalable=no' teilweise)
 document.addEventListener('gesturestart', e=>e.preventDefault());
 // Kontextmenü bei langem Fingerdruck auf dem Spielfeld unterbinden
@@ -6114,11 +6317,18 @@ canvas.addEventListener('contextmenu', e=>e.preventDefault());
 /* ============ TOUCH-STEUERUNG (virtueller Joystick) ============ */
 // Erkennung: Ist das ein Touch-Gerät? Auf dem Laptop mit Maus bleibt alles unsichtbar.
 const IS_TOUCH = window.matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window);
+// Ob die Bedienelemente auf dem Bildschirm angezeigt werden – lässt sich abschalten
+let touchUI = (localStorage.getItem('dataluma_touchui') ?? (IS_TOUCH ? '1' : '0')) === '1';
+function touchUIUmschalten(){
+  touchUI = !touchUI;
+  try{ localStorage.setItem('dataluma_touchui', touchUI ? '1':'0'); }catch(e){}
+  toast(touchUI ? 'Bildschirm-Steuerung an.' : 'Bildschirm-Steuerung aus.');
+}
 
 // Aktueller Zustand: dx/dy ist die Richtung, in die der Finger drückt (-1 bis 1)
 const touch = { id:null, dx:0, dy:0 };
 // Position & Größe des Joysticks unten links (in Spiel-Pixeln, nicht Bildschirm-Pixeln)
-const PAD = { x:56, y:GAME_H-56, r:34, knob:13, dead:8 };
+const PAD = { x:56, y:GAME_H-56, r:34, knob:13, dead:8 };   // Lage wird in layoutTouchControls gesetzt
 // Interaktions-Button unten rechts (macht dasselbe wie die E-Taste)
 const BTN_A = { x:GAME_W-48, y:GAME_H-48, r:22 };
 
@@ -6167,7 +6377,7 @@ canvas.addEventListener('touchcancel', releaseStick);
 
 // Zeichnet den Joystick (halbtransparent, Knopf folgt dem Finger)
 function drawTouchPad(){
-  if(!IS_TOUCH || state.mode!=='game' || state.dialog || state.menu || state.cutscene) return;
+  if(!touchUI || state.mode!=='game' || state.dialog || state.menu || state.cutscene) return;
   ctx.globalAlpha=0.45;
   pixCircle(PAD.x, PAD.y, PAD.r,   '#3b2f2f');   // dunkler Ring
   pixCircle(PAD.x, PAD.y, PAD.r-3, '#fdf3dc');   // helle Fläche
@@ -6183,7 +6393,7 @@ function drawTouchPad(){
 }
 // Zeichnet den Interaktions-Button (leuchtet auf, wenn etwas in Reichweite ist)
 function drawTouchButton(){
-  if(!IS_TOUCH || state.mode!=='game' || state.menu || state.cutscene) return;
+  if(!touchUI || state.mode!=='game' || state.menu || state.cutscene) return;
   const active = !state.dialog && !!currentCandidate;   // etwas Ansprechbares in der Nähe?
   ctx.globalAlpha = (active || state.dialog) ? 0.9 : 0.4;
   pixCircle(BTN_A.x, BTN_A.y, BTN_A.r,   '#3b2f2f');
@@ -6201,11 +6411,11 @@ buildFood();
 buildWald();
 buildCoffeeTeam();
 addNPC('harvey','Harvey',120,116,HARVEY_PAL,HARVEY_GRIDS,PORTRAIT_HARVEY,PORTRAIT_HARVEY_PAL,harveyTalk);
-addNPC('friend','???',588,468,FRIEND_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
-addNPC('kobi','Kobi',632,86,KOBI_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_KOBI_PAL,kobiTalk);
-addNPC('tomas','Tomás',604,90,TOMAS_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_TOMAS_PAL,tomasTalk);
-addNPC('momo','Momo',252,432,MOMO_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_MOMO_PAL,momoTalk);
-addNPC('kip','Kip',312,428,KIP_PAL,PLAYER_GRIDS,PORTRAIT_PLAYER,PORTRAIT_KIP_PAL,kipTalk);
+addNPC('friend','???',588,468,FRIEND_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
+addNPC('kobi','Kobi',632,86,KOBI_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_KOBI_PAL,kobiTalk);
+addNPC('tomas','Tomás',604,90,TOMAS_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_TOMAS_PAL,tomasTalk);
+addNPC('momo','Momo',252,432,MOMO_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_MOMO_PAL,momoTalk);
+addNPC('kip','Kip',312,428,KIP_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_KIP_PAL,kipTalk);
 player.pal=playerPal();
 fitCanvas();
 // Spielstände aus der Zeit übernehmen, als das Spiel noch anders hieß
