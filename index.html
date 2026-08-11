@@ -113,6 +113,7 @@ const state = {
   whiteTarget: 0,            // Ziel, dem sich whiteAlpha sanft annähert
   expo: 0,                   // geglättete Helligkeit (folgt exposure() weich nach)
   scene: 'camp',             // wo bin ich gerade: 'camp', 'tent' oder 'stage'
+  tiereGesehen: [],          // mit welchen Trip-Tieren schon geredet wurde
   onBike: false,             // sitzt der Spieler auf dem Rad?
   flashlight: false,         // Taschenlampe an?
   fade: 0,                   // Schwarzblende beim Rein- und Rausgehen (0..1)
@@ -308,8 +309,240 @@ const HERO_LEGS_B = [
   ' onnoUUonno ',
   ' oNoooonNNNo'
 ];
-const HERO_GRIDS = { down:HERO_DOWN, up:HERO_UP, side:HERO_SIDE,
-  bodyRows:17, legsSet:{ idle:HERO_LEGS_IDLE, a:HERO_LEGS_A, b:HERO_LEGS_B } };
+/* --- Vorderansicht: Joshuas gezeichnete Bilder, Pixel für Pixel übernommen --- */
+const HERO_DOWN_IDLE = [
+  '     oooo     ',
+  '    oNNNNo    ',
+  '   onnnnnNo   ',
+  '  onyNnnnnNo  ',
+  ' onnvoooonnNo ',
+  ' onoodMMdoono ',
+  ' ooddhMhdMdoo ',
+  'osMhsssssshhso',
+  'oSsooossooosSo',
+  ' oswrossorwso ',
+  ' ooWhwsswhWoo ',
+  ' ohSssssssSho ',
+  ' ohoSSSSSSoho ',
+  '  ohooooooho  ',
+  ' olollllllolo ',
+  ' oRRllRRllRRo ',
+  'ossoLLLLLLosso',
+  'oSsoooooooosSo',
+  ' oooouuuuoooo ',
+  '  onnoUUonno  ',
+  '  oNNnoonNNo  ',
+  '   ooo  ooo   ',
+];
+const HERO_DOWN_A = [
+  '      oooo    ',
+  '    ooNNNNo   ',
+  '   onnnnnNo   ',
+  '  onyNnnnoNo  ',
+  ' onnvoooodoNo ',
+  ' onoodhdhhono ',
+  ' ooddhMhhMdoo ',
+  'osMhsssssshMso',
+  'oSsooossooosSo',
+  ' oswrossorwso ',
+  ' ooWhwsswhWoo ',
+  ' ohSssssssSho ',
+  ' ohoSSSSSSoho ',
+  ' oshooooooho  ',
+  '  oollllllolo ',
+  '  olllRRllllo ',
+  '   oLLLLoRRRo ',
+  '    ooooosso  ',
+  '   oouuUoSSo  ',
+  '  oNnouuooo   ',
+  '  oNnnoo      ',
+  '   ooo        ',
+];
+const HERO_DOWN_B = [
+  '    oooo      ',
+  '   oNNNNoo    ',
+  '   onnnnNNo   ',
+  '  onyNnnnnNo  ',
+  ' onnvoooonnNo ',
+  ' onoohdhdoono ',
+  ' ooMddhMhhhoo ',
+  'osdhssssssdMso',
+  'oSsooossooosSo',
+  ' oswrossorwso ',
+  ' ooWhwsswhWoo ',
+  ' oMSssssssSMo ',
+  ' oMoSSSSSSoMo ',
+  '  oMooooooMso ',
+  ' ololllllloo  ',
+  ' ollllRRlllo  ',
+  ' oRRRoLLLLo   ',
+  '  ossooooo    ',
+  '  oSSoUuuoo   ',
+  '   ooouuonNo  ',
+  '      oonnNo  ',
+  '        ooo   ',
+];
+
+/* --- Seitenansicht (nach links gezeichnet, rechts wird gespiegelt) --- */
+const HERO_LEFT_1 = [
+  '      ooo    ',
+  '     oNNNo   ',
+  '    onnnNo   ',
+  '   ovNnnnNo  ',
+  '  onnnnnnNNo ',
+  ' oonnnnnnnNo ',
+  'oddooooooooo ',
+  'oMhhMhdhooMo ',
+  ' ooooshhssMo ',
+  ' osrwsssSsoo ',
+  ' osxWosSooho ',
+  ' osssSooMdoMo',
+  ' oSSSoMMMo o ',
+  '  oooMMoooo  ',
+  '    oooloNo  ',
+  '    oRRlonNo ',
+  '   ossoLonvo ',
+  '   oSsooono  ',
+  '    oouuoo   ',
+  '    onnUo    ',
+  '    oNnno    ',
+  '    oooo     ',
+];
+const HERO_LEFT_2 = [
+  '      oooo   ',
+  '     ooNNNo  ',
+  '    onnnnNo  ',
+  '   oNvnnnNo  ',
+  '  onnnnnnNNo ',
+  ' oonnnnnnnNo ',
+  'oddooooooooo ',
+  'oMdhMhdhooMo ',
+  ' ooooshMssoo ',
+  ' osrwsssSso  ',
+  ' osxWossooho ',
+  ' osssSooMdoMo',
+  ' oSSSoMMMo o ',
+  '  oooMooooo  ',
+  '    oolloNo  ',
+  '    oRRlonNo ',
+  '    ossLonvo ',
+  '   ooSsoono  ',
+  '  onoouoooo  ',
+  '  oNnoUoooNo ',
+  '   onnoonno  ',
+  '    oo  oo   ',
+];
+/* --- Rückansicht: vier Bilder, alle leicht verschieden --- */
+const HERO_UP_1 = [
+  '    oooooo    ',
+  '   oNNNNNNo   ',
+  '  onnnnnnnNo  ',
+  ' onnnnnnnnnNo ',
+  ' onnnnnnnnnno ',
+  ' onnNnnnnNnno ',
+  ' oonnNnnNnnno ',
+  'osonnNNNNnnoso',
+  'oSonNnNNnNnoSo',
+  ' oMonnnnnnodo ',
+  ' oMdoooooodMo ',
+  ' oohhMdMdMMoo ',
+  'oMoodMhhhMooMo',
+  ' oMMooMMooMMo ',
+  ' ooonoooonooo ',
+  ' oRlLnnynLlRo ',
+  'oSsoLnvnnLosSo',
+  'ossoooooooosso',
+  ' ooooUuuUoooo ',
+  '  oNnouuonNo  ',
+  '  onnnoonnno  ',
+  '   ooo  ooo   ',
+];
+const HERO_UP_2 = [
+  '    oooooo    ',
+  '   oNNNNNNo   ',
+  '  onnnnnNNNo  ',
+  ' onnnnnnnnnNo ',
+  ' onnnnnnnnNno ',
+  ' onnNnnnnNnno ',
+  ' oonnNNNNNnno ',
+  'osonnnNNNnnoso',
+  'oSonnNnnnNnoSo',
+  ' oMonnnnnnodo ',
+  ' oMdoooooodMo ',
+  ' oohhMdMdMMoo ',
+  'odoodMhhhMoodo',
+  ' oddoohMooddo ',
+  ' osonoooonoo  ',
+  ' oRlLnnynRsSo ',
+  '  ooLnvnnosso ',
+  '    oooooooo  ',
+  '   ooUuuUo    ',
+  '  oNnouuo     ',
+  '  onnnoo      ',
+  '   ooo        ',
+];
+const HERO_UP_3 = [
+  '    oooooo    ',
+  '   oNNNNNNo   ',
+  '  onnnnnnnNo  ',
+  ' onnnnnnnnnNo ',
+  ' onnnnnnnnnno ',
+  ' onnNnnnnNnno ',
+  ' oonnNnnNnnno ',
+  'osonnNNNNnnoso',
+  'oSonNnNNnNnoSo',
+  ' ohonnnnnnodo ',
+  ' oMdoooooodMo ',
+  ' oohhMdMdMMoo ',
+  'odoodMhhhdooMo',
+  ' odMooMMooddo ',
+  ' ooonoooonooo ',
+  ' oRlLnnynLlRo ',
+  'oSsoLnvnnLosSo',
+  'ossoooooooosso',
+  ' ooooUuuUoooo ',
+  '  oNnouuonNo  ',
+  '  onnnoonnno  ',
+  '   ooo  ooo   ',
+];
+const HERO_UP_4 = [
+  '    oooooo    ',
+  '   oNNNNNNo   ',
+  '  onnnnnnnNo  ',
+  ' onnnnnnnnnNo ',
+  ' onnnnnnnnnno ',
+  ' onnNnnnnNnno ',
+  ' oonnNnnNnnno ',
+  'osonnNNNNnnoso',
+  'oSonNnNNnNnoSo',
+  ' oMonnnnnnodo ',
+  ' ohMooooooMho ',
+  ' ooMhhdddMMoo ',
+  'oMoodMMhhhoodo',
+  ' odMooMhooMMo ',
+  '  ooooooonoso ',
+  ' oSsRnnynLlRo ',
+  ' ossonvnnLoo  ',
+  '  oooooooo    ',
+  '    oUuuUoo   ',
+  '     ouuonNo  ',
+  '      oonnno  ',
+  '        ooo   ',
+];
+
+const HERO_GRIDS = {
+  // Nach vorne: fertige Einzelbilder aus der Zeichnung
+  // Bilderfolgen: es gibt kein eigenes Stehbild, die Bilder wechseln sich ab.
+  // Vorne und hinten laufen über vier Schritte, zur Seite über zwei.
+  frames: {
+    down: [HERO_DOWN_IDLE, HERO_DOWN_A, HERO_DOWN_IDLE, HERO_DOWN_B],
+    up:   [HERO_UP_1, HERO_UP_2, HERO_UP_3, HERO_UP_4],
+    left: [HERO_LEFT_1, HERO_LEFT_2]
+  },
+  // Die anderen Richtungen noch abgeleitet (auf gleiche Größe gebracht)
+  down:HERO_DOWN, up:HERO_UP, side:HERO_SIDE,
+  bodyRows:17, legsSet:{ idle:HERO_LEGS_IDLE, a:HERO_LEGS_A, b:HERO_LEGS_B },
+  pad:1, padTop:2 };
 
 // Ergänzt eine vorhandene Figurenpalette um die Töne, die das neue Sprite braucht.
 // So behalten Charaktereditor und alle NPCs ihre eigenen Farben.
@@ -322,12 +555,14 @@ function heldenPalette(pal){
   p.M = shade(pal.h,-0.12); p.R = shade(pal.d,-0.34);
   p.s = pal.s;             p.S = pal.S;
   p.A = shade(pal.s,-0.14);                          // Wange
-  p.w = '#ffffff';         p.W = '#e4e4e4';
+  p.w = '#ffffff';         p.W = '#ebebeb';
   p.i = '#e1b83d';         p.I = '#c7b26d';          // Augen
+  p.x = '#78524e';         // Lidschatten im Profil
   p.l = pal.c;             p.L = shade(pal.c,-0.16); // Shirt
   p.J = shade(pal.k,-0.35);                          // offene Jacke
-  p.u = '#5d737d';         p.U = '#52666f';          // Gürtel
-  p.r = '#b05e55';         p.v = '#3171a6';          // Anstecker an der Mütze
+  p.u = '#5e747e';         p.U = '#546770';          // Gürtel
+  p.r = '#af5f56';         p.v = '#0072a6';          // Anstecker
+  p.y = '#ffde70';                                   // gelber Anstecker
   return p;
 }
 
@@ -895,23 +1130,103 @@ function tileIsPath(tx,ty){
 }
 
 // Malt die komplette Wiese samt Pfad EINMAL in einen unsichtbaren Canvas.
+/* --- Gezeichnete Bodenkachel und Baumstumpf --- */
+const SPR_GRAS = {
+  pal:{a:'#8ba38e', b:'#7f9b8b', c:'#648b7f', d:'#bec59a'},
+  grid:[
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaabbaa',
+    'aaaaaaaaaaaaaccaaaaaaaaaaaaaabaa',
+    'aaaaaaaaaaaaacacaaaaaaaaaaaaabaa',
+    'aaaaaacaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaadaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaddaadaaaaaaaaaaabaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaababaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaacaaaa',
+    'aacaaaaaaaaaaaaaaaaaaaaaaaccaaaa',
+    'accaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaacaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaacaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaddadaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaadaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaadaaaaaaa',
+    'aaaaaaaaaaaaaaacacaaaaadddaaaaaa',
+    'aaaaaaaaaaaaaaaacaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaabbbaaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaabbaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaabaaaaaaaaaaaaaaaaaaaaaaa',
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  ]};
+const SPR_STUMPF = {
+  pal:{a:'#000000', b:'#6c301d', c:'#38190f'},
+  grid:[
+    '  aaaaaaaaa  ',
+    ' aabbbbbbbaa ',
+    'aabbcccccbbaa',
+    'aabbcccccbbaa',
+    'aaabbbbbbbaaa',
+    'acaaaaaaaaaca',
+    'accccccccccca',
+    'acccacccaccca',
+    'acccaccccccca',
+    'accccccccacca',
+    'acaccccaccaca',
+    'accacccacccca',
+    'aacccccccccaa',
+    ' aacccccccca ',
+    '  aaaaaaaaa  ',
+  ]};
+
+// Malt die gezeichnete Graskachel einmal in einen kleinen Puffer,
+// damit der Boden danach schnell damit gefüllt werden kann.
+let grasKachel = null;
+function baueGrasKachel(){
+  const g = SPR_GRAS.grid;
+  grasKachel = document.createElement('canvas');
+  grasKachel.width = g[0].length; grasKachel.height = g.length;
+  const k = grasKachel.getContext('2d');
+  for(let r=0;r<g.length;r++)
+    for(let c=0;c<g[r].length;c++){
+      const col = SPR_GRAS.pal[g[r][c]];
+      if(col){ k.fillStyle=col; k.fillRect(c,r,1,1); }
+    }
+}
+// Füllt eine Fläche lückenlos mit der Graskachel
+function fuelleGras(g2d, w, h){
+  if(!grasKachel) baueGrasKachel();
+  for(let y=0;y<h;y+=grasKachel.height)
+    for(let x=0;x<w;x+=grasKachel.width)
+      g2d.drawImage(grasKachel, x, y);
+}
+
 function buildGround(){
   ground = document.createElement('canvas');
   ground.width = MAPW*TILE; ground.height = MAPH*TILE;
   const g = ground.getContext('2d');
   const rnd = mulberry32(1337);
+  fuelleGras(g, MAPW*TILE, MAPH*TILE);      // gezeichnete Graskachel als Untergrund
   for(let ty=0; ty<MAPH; ty++){
     for(let tx=0; tx<MAPW; tx++){
       const path = tileIsPath(tx,ty);
-      g.fillStyle = path ? '#dcc28e' : '#a3cf6b';
-      g.fillRect(tx*TILE, ty*TILE, TILE, TILE);
-      // Sprenkel für lebendige Textur
-      for(let i=0;i<5;i++){
-        const px = tx*TILE + Math.floor(rnd()*15);
-        const py = ty*TILE + Math.floor(rnd()*15);
-        if(path){ g.fillStyle = rnd()<0.5 ? '#cbb47e' : '#e6d3a2'; }
-        else    { g.fillStyle = rnd()<0.5 ? '#94c15c' : '#b2da7b'; }
-        g.fillRect(px,py,1,1);
+      if(path){
+        g.fillStyle = '#dcc28e';
+        g.fillRect(tx*TILE, ty*TILE, TILE, TILE);
+        for(let i=0;i<5;i++){
+          const px = tx*TILE + Math.floor(rnd()*15);
+          const py = ty*TILE + Math.floor(rnd()*15);
+          g.fillStyle = rnd()<0.5 ? '#cbb47e' : '#e6d3a2';
+          g.fillRect(px,py,1,1);
+        }
       }
       if(!path){
         const r = rnd();
@@ -1043,6 +1358,9 @@ function buildWorld(){
   addToolbox(19,25);
   addGate(25,3);
   addBike(7,5);
+  // Baumstümpfe zum Ausruhen, über die Wiese verteilt
+  [[11,7],[23,11],[16,19],[31,15],[9,24],[27,29],[36,13],[20,7]]
+    .forEach(s=>addStumpf(s[0],s[1]));
   addFoodGateCamp(40,30);
   addWoodpile(8,28);
   addSign(6,26,'Materiallager – Bretter, Gitter, Kabel');
@@ -1317,6 +1635,7 @@ function drawObject(o){
   switch(o.type){
     case 'chair':   drawChair(o); break;
     case 'toolbox': drawToolbox(o); break;
+    case 'stumpf':  drawStumpf(o); break;
     case 'woodpile': drawWoodpile(o); break;
     case 'gate':    drawGate(o); break;
     case 'foodGate': drawFoodGateCamp(o); break;
@@ -1338,7 +1657,9 @@ const player = { x:204, y:150, facing:'down', moving:false, animT:0, frame:0,
                  pal:null, gridSet:HERO_GRIDS };
 const npcs = [];
 function addNPC(id,name,x,y,pal,gridSet,portrait,pPal,talk){
-  pal = heldenPalette(pal);   // fehlende Töne fürs neue Sprite ergänzen
+  // Nur Figuren, die das Helden-Sprite benutzen, brauchen die ergänzten Töne.
+  // Eigens gezeichnete Figuren bringen ihre komplette Palette schon mit.
+  if(gridSet === HERO_GRIDS) pal = heldenPalette(pal);
   const n = { id, name, x, y, facing:'down', moving:false, animT:0, frame:0,
               pal, gridSet, portrait, pPal, talk };
   npcs.push(n);
@@ -1430,19 +1751,39 @@ function npcUpdate(dt){
 // Zeichnet eine Figur (Spieler oder NPC) inkl. Schatten & Lauf-Animation.
 // Liest Zellgröße, Körperzeilen und Bein-Zeilen aus dem gridSet, damit
 // einfache (12x16) und hochauflösende (24x32) Sprites gleich behandelt werden.
+// Bringt ein schmaleres Raster auf die Größe der gezeichneten Bilder
+function padGrid(grid, pad, padTop){
+  const leer = ' '.repeat(grid[0].length + pad*2);
+  const oben = []; for(let i=0;i<padTop;i++) oben.push(leer);
+  return oben.concat(grid.map(z => ' '.repeat(pad) + z + ' '.repeat(pad)));
+}
 function drawEntity(e){
   const gs = e.gridSet;
   const cell = gs.cell || 1;
   const bodyRows = gs.bodyRows || 13;
   const legsSet = gs.legsSet || { idle:LEGS_IDLE, a:LEGS_A, b:LEGS_B };
-  let baseGrid, flip=false;
-  if(e.facing==='up') baseGrid=gs.up;
-  else if(e.facing==='down') baseGrid=gs.down;
-  else { baseGrid=gs.side; flip=(e.facing==='right'); }
-  const legs = e.moving ? (e.frame===1?legsSet.a : e.frame===3?legsSet.b : legsSet.idle) : legsSet.idle;
-  const grid = baseGrid.slice(0,bodyRows).concat(legs);
-  const bob = (e.moving && (e.frame===1||e.frame===3)) ? -1 : 0;
-  const sx = Math.round(e.x-6), sy = Math.round(e.y-grid.length*cell+bob);
+  let richtung = (e.facing==='up') ? 'up' : (e.facing==='down') ? 'down' : 'side';
+  let flip = (e.facing==='right');
+  // Gezeichnete Seitenansicht: links im Original, rechts gespiegelt
+  if(gs.frames && gs.frames.left && (e.facing==='left' || e.facing==='right')){
+    richtung = 'left';
+    flip = (e.facing==='right');
+  }
+  const schritt = e.moving ? (e.frame===1?'a' : e.frame===3?'b' : 'idle') : 'idle';
+  let grid;
+  if(gs.frames && gs.frames[richtung]){
+    // Gezeichnete Bilderfolge: die Bilder wechseln sich streng ab, kein Stehbild.
+    // Beim Stillstehen bleibt es auf dem ersten Bild der Folge stehen.
+    const folge = gs.frames[richtung];
+    grid = folge[ e.moving ? (e.frame % folge.length) : 0 ];
+  } else {
+    const baseGrid = richtung==='up' ? gs.up : richtung==='down' ? gs.down : gs.side;
+    grid = baseGrid.slice(0,bodyRows).concat(legsSet[schritt] || legsSet.idle);
+    if(gs.pad) grid = padGrid(grid, gs.pad, gs.padTop||0);
+  }
+  const bob = (!gs.frames || !gs.frames[richtung]) && e.moving && (e.frame===1||e.frame===3) ? -1 : 0;
+  const breite = grid[0].length * cell;
+  const sx = Math.round(e.x - breite/2), sy = Math.round(e.y-grid.length*cell+bob);
   ctx.fillStyle='rgba(50,35,25,0.25)';
   ctx.fillRect(sx+2, Math.round(e.y)-1, 8, 2);
   drawGrid(grid, e.pal, sx, sy, flip, cell);
@@ -1956,6 +2297,27 @@ function drawFoodGateCamp(o){
   ctx.fillStyle='#c9402f'; ctx.fillRect(o.x-4, o.base-32, 9, 8);
   ctx.fillStyle='#e8c46a';
   ctx.fillRect(o.x-3,o.base-37,2,6); ctx.fillRect(o.x,o.base-36,2,5); ctx.fillRect(o.x+3,o.base-35,2,4);
+}
+
+// Baumstumpf: steht herum und lädt zum Sitzen ein
+function addStumpf(tx,ty){
+  const x=tx*TILE+8, base=(ty+1)*TILE;
+  objects.push({ type:'stumpf', x, base, label:'Baumstumpf',
+    ax:x, ay:base, solid:{x:x-6, y:base-6, w:12, h:6},
+    talk:()=>stumpfTalk() });
+}
+function drawStumpf(o){
+  ctx.fillStyle='rgba(40,32,24,0.22)';
+  ctx.fillRect(o.x-7, o.base-3, 14, 4);
+  drawSprite(SPR_STUMPF, o.x, o.base, 1);
+}
+function stumpfTalk(){
+  if(state.energy > 92){
+    startDialog(lin([{ who:'sys', name:'Baumstumpf',
+      text:'Ein abgesägter Stamm, glatt gesessen von vielen vor dir. Du bist gerade nicht müde.' }]), {breakable:true});
+    return;
+  }
+  startDialog('stumpfSitz1', {breakable:true});
 }
 
 // Veras Werkzeugkiste steht bei Momo im Camp
@@ -3902,6 +4264,66 @@ DIALOGS.teamSmalltalk2 = { who:'sys', name(){ return (coffee.gespraechMit||baris
   },
   next:null };
 
+
+/* --- Tomás' Auftrag: alle neun Tiere finden --- */
+DIALOGS.tierAuftrag1 = { who:'tomas', text:'Sag mal... die Tiere. Hast du die auch gesehen?', next:'tierAuftrag2' };
+DIALOGS.tierAuftrag2 = { who:'tomas', text:'Ich seh sie seit Jahren. Aber nie alle. Immer nur zwei, drei, dann sind sie wieder weg.', next:'tierAuftrag3' };
+DIALOGS.tierAuftrag3 = { who:'tomas', text:'Es sollen neun sein. Neun verschiedene. Jedes sagt dir was anderes.', choices:[
+    { t:'Ich halte die Augen offen.', next:'tierAuftrag4' },
+    { t:'Neun? Woher weißt du das?',  next:'tierAuftragWoher' }
+  ]};
+DIALOGS.tierAuftragWoher = { who:'tomas', text:'Weiß ich nicht. Ich weiß es einfach. So funktioniert das manchmal.', next:'tierAuftrag4' };
+DIALOGS.tierAuftrag4 = { who:'tomas', text:'Rede mit jedem, das dir begegnet. Und komm wieder, wenn du alle hast.',
+  onEnter(){
+    if(!state.flags.tierMission){
+      state.flags.tierMission = true;
+      state.journal.missions.push({key:'tiere', done:false});
+      state.journal.memories.push('Tomás sagt, es gibt neun Tiere auf dem Trip. Mit jedem reden.');
+    }
+  },
+  next:null };
+DIALOGS.tierStand1 = { who:'tomas',
+  text(){
+    const n = (state.tiereGesehen||[]).length, f = tiereFehlen();
+    if(n===0) return 'Noch keins? Du musst schon getrippt sein, sonst zeigen sie sich nicht.';
+    if(f===1) return 'Acht. Eines fehlt noch. Das letzte ist immer das scheueste.';
+    return n+' von neun. Bleib dran, sie kommen nicht auf Bestellung.';
+  },
+  next:null };
+DIALOGS.tierFertig1 = { who:'tomas', text:'Warte. Alle neun? Wirklich alle?', next:'tierFertig2' };
+DIALOGS.tierFertig2 = { who:'tomas',
+  text(){ return 'Reh, Hase, Frosch, Krabbe, Katze, Stier, Eule, Hund... und die Ente. Ja. Das ist der ganze Zoo.'; },
+  next:'tierFertig3' };
+DIALOGS.tierFertig3 = { who:'tomas', text:'Das hat vor dir noch keiner geschafft. Zumindest hat es mir keiner erzählt.',
+  onEnter(){
+    state.flags.tierMissionDone = true;
+    addSympathy('tomas', 5);
+    const m = state.journal.missions.find(m=>m.key==='tiere');
+    if(m) m.done = true;
+    state.journal.memories.push('Alle neun Trip-Tiere gefunden. Tomás war ehrlich beeindruckt.');
+  },
+  next:'tierFertig4' };
+DIALOGS.tierFertig4 = { who:'tomas', text:'Behalt das für dich, ja? Manche Sachen werden kleiner, wenn man sie erzählt.', next:null };
+
+
+/* --- Auf dem Baumstumpf ausruhen --- */
+DIALOGS.stumpfSitz1 = { who:'sys', name:'Baumstumpf',
+  text:'Ein abgesägter Stamm, glatt gesessen von vielen vor dir.', choices:[
+    { t:'Kurz hinsetzen', next:'stumpfSitz2' },
+    { t:'Weitergehen',    next:null }
+  ]};
+DIALOGS.stumpfSitz2 = { who:'sys', name:'',
+  text(){ return pick([
+    'Du sitzt. Von hier sieht das Ganze weniger nach Aufgabe aus und mehr nach Festival.',
+    'Ein paar Atemzüge lang passiert nichts. Tut gut.',
+    'Irgendwo weiter hinten macht jemand eine Dose auf. Der Wind trägt Musik herüber.'
+  ]); },
+  onEnter(){
+    state.energy = clamp(state.energy + 12, 0, 100);
+    state.social = clamp(state.social + 8, 0, 100);
+  },
+  next:null };
+
 DIALOGS.kipFirst1 = { who:'kip', text:'Oh. Du bist es.', next:'kipFirst2' };
 DIALOGS.kipFirst2 = { who:'kip', text:'Na, wieder unter den Lebenden?',
   onEnter(){ const s=state.sympathy.find(s=>s.id==='kip'); if(s) s.name='Kip'; },
@@ -4379,11 +4801,17 @@ function tomasTalk(){
     // Phase 2: Bad Trip – ernster Moment, keine Brillen-Comedy
     state.flags.tomasBadTrip = true;
     startDialog('t2Start', {breakable:false});
+  } else if(!state.flags.tierMission){
+    startDialog('tierAuftrag1', {breakable:true});
+  } else if(tiereFehlen() === 0 && !state.flags.tierMissionDone){
+    startDialog('tierFertig1', {breakable:true});
+  } else if(tiereFehlen() > 0){
+    startDialog('tierStand1', {breakable:true});
   } else {
     startDialog(lin([{ who:'tomas', text: pick([
       'Puh... zurück auf dem Teppich. Danke, dass du geblieben bist.',
-      'Nächstes Mal reise ich mit Sitzplatzreservierung: guter Ort, gute Leute, guter Kopf.',
-      'Die Tiere haben mit dir geredet, sagst du? ...Interessant. Sehr interessant.'
+      'Seit du mir von den Tieren erzählt hast, sehe ich sie auch. Nur leiser.',
+      'Neun Stimmen. Und jede hatte recht.'
     ]) }]), {breakable:true});
   }
 }
@@ -4467,22 +4895,319 @@ DIALOGS.t2Done = { who:'sys', name:'',
 
 /* --- Trip-Tiere: rein atmosphärisch, sagen surreale Zeilen und verschwinden --- */
 const ANIMAL_KINDS = [
-  { kind:'eichhoernchen', label:'Eichhörnchen', lines:[
-    'Ich vergrabe Nüsse und vergesse sie. Der Wald wächst aus meinen vergessenen Plänen. Woraus wächst deiner?',
-    'Du rennst viel. Aber wohin rennt eigentlich das Rennen?',
-    'Psst. Der Baum erinnert sich an jeden, der sich je an ihn gelehnt hat.'
+  { kind:'reh', label:'Reh', lines:[
+    'Ich stehe still, weil Stillstehen auch eine Entscheidung ist. Deine Beine wissen das noch nicht.',
+    'Alle sagen, ich sei scheu. Dabei schaue ich nur genauer hin als ihr.',
+    'Zwischen zwei Schritten liegt der ganze Wald. Ihr überspringt ihn immer.'
   ]},
-  { kind:'vogel', label:'Vogel', lines:[
-    'Von oben sind alle Wege nur Kritzeleien. Ihr nehmt sie so ernst.',
-    'Ich singe nicht, weil ich eine Antwort weiß. Ich singe, weil die Frage schön ist.',
-    'Der Himmel gehört niemandem. Deshalb passt er auf alle auf.'
+  { kind:'hase', label:'Hase', lines:[
+    'Schnell sein hilft nicht, wenn man in die falsche Richtung rennt. Frag mich, ich weiß es.',
+    'Ich habe zwei Ohren und trotzdem höre ich meistens nur mein eigenes Herz.',
+    'Du suchst etwas von gestern Nacht. Vielleicht sucht es auch dich.'
   ]},
-  { kind:'fuchs', label:'Fuchs', lines:[
-    'Du suchst eine Erinnerung? Vielleicht ruht sie sich nur in dir aus.',
-    'Ich bin nicht wirklich hier. Aber wer von uns beiden ist das schon?',
-    'Leise sein ist auch eine Sprache. Die meisten hören ihr nur nie zu.'
+  { kind:'frosch', label:'Frosch', lines:[
+    'Ich sitze im Teich und der Teich sitzt in mir. Frag nicht, wer angefangen hat.',
+    'Alles quakt. Manche nennen es Gespräch.',
+    'Ein Sprung ist nur ein Fallen, das vorher gut nachgedacht hat.'
+  ]},
+  { kind:'krabbe', label:'Krabbe', lines:[
+    'Ich gehe seitwärts. So komme ich nirgends an und verpasse trotzdem nichts.',
+    'Alles, was hart ist, ist außen. Innen bin ich furchtbar weich. Wie du.',
+    'Man kann eine Sache auch von der Seite betrachten. Empfehle ich sehr.'
+  ]},
+  { kind:'katze', label:'Katze', lines:[
+    'Ich kam nicht, weil du gerufen hast. Ich kam, weil es mir gerade passte.',
+    'Schlafen ist die ehrlichste Art, den Tag zu verbringen.',
+    'Du machst dir zu viele Gedanken. Setz dich hin und schau in die Sonne.'
+  ]},
+  { kind:'stier', label:'Stier', lines:[
+    'Ich renne nur auf das zu, was rot ist. Du rennst auf alles zu. Wer ist hier verrückt?',
+    'Groß sein heißt nicht, laut sein. Es heißt, sich nicht mehr wegschubsen lassen.',
+    'Steh still und atme. Der Boden trägt dich schon die ganze Zeit.'
+  ]},
+  { kind:'eule', label:'Eule', lines:[
+    'Ich sehe im Dunkeln. Das heißt nicht, dass mir gefällt, was ich sehe.',
+    'Nachts ist alles ehrlicher. Die Leute vergessen, sich zu verstellen.',
+    'Du weißt mehr über gestern, als du denkst. Es hat sich nur versteckt.'
+  ]},
+  { kind:'ente', label:'Ente', lines:[
+    'Oben ruhig, unten paddeln wie verrückt. Kennst du bestimmt.',
+    'Wasser merkt sich nichts. Deshalb schwimme ich so gerne darin.',
+    'Ich bin nicht verloren, ich bin nur woanders. Das ist ein Unterschied.'
+  ]},
+  { kind:'hund', label:'Hund', lines:[
+    'Du riechst nach gestern Nacht. Nach ziemlich viel gestern Nacht.',
+    'Ich habe nie verstanden, warum ihr euch für Dinge schämt, die schon vorbei sind.',
+    'Wenn du dich schlecht fühlst: Ich bin hier. Mehr habe ich nicht, aber das habe ich.'
   ]}
-];
+];/* --- Gezeichnete Tiere und Stella (je mit eigener Palette) --- */
+const SPR_REH = {
+  pal:{a:'#000000', b:'#322417', c:'#261c12', d:'#4c3723', e:'#8c6641', f:'#402e1d', g:'#ffffff'},
+  grid:[
+    '   a      a   ',
+    '  abaa  aaca  ',
+    '  acbcaabbba  ',
+    '   aabaacaa   ',
+    ' aacabaacabaa ',
+    'adaabcaabcaada',
+    'aedaacaacaadea',
+    ' aeddddddddea ',
+    '  adafddfada  ',
+    '  adgaddagda  ',
+    '  afddddddfa  ',
+    '   adffffda   ',
+    '   afeeeefa   ',
+    '    aeaaea    ',
+    '   afaeeafa   ',
+    '  addfaafdda  ',
+    ' addddffdddda ',
+    ' adaafddfaada ',
+    ' afaafddfaafa ',
+    '  affaddaffa  ',
+    '   aaddddaa   ',
+    '   afdaadfa   ',
+    '   addaadda   ',
+    '   aedaadea   ',
+    '    aa  aa    ',
+  ]};
+const SPR_FROSCH = {
+  pal:{a:'#000000', b:'#466259', c:'#638a7e', d:'#55766c', e:'#5f8478', f:'#ebebeb', g:'#ffffff', h:'#597c71', i:'#cf7261', j:'#b0be8f', k:'#a7b488'},
+  grid:[
+    '  aaaa  aaaa  ',
+    ' abccdaabccea ',
+    ' aeaccaacdaca ',
+    'accfacaacafcea',
+    'abcgghcchggcba',
+    'aedgacdccagcda',
+    'accfacbbcafcca',
+    'ahchcceccbchca',
+    ' ahcaaaaaccca ',
+    ' abcccccidcda ',
+    '  aacddcdcaa  ',
+    '   aaaccaaa   ',
+    '  ahcccbcca   ',
+    ' abcaeacahba  ',
+    ' acccahccacca ',
+    '  ahaccdcaca  ',
+    '   achjjhca   ',
+    '   ahjkkjha   ',
+    '    ahccha    ',
+    '   accaacda   ',
+    '  abcbaabcba  ',
+    '   aaa  aaa   ',
+  ]};
+const SPR_HASE = {
+  pal:{a:'#000000', b:'#a0a0a0', c:'#777777', d:'#989898', e:'#c1c1c1'},
+  grid:[
+    '     a  a     ',
+    '    aa  aa    ',
+    '   aba  aba   ',
+    '  acba  abca  ',
+    '  acda  adca  ',
+    '  acdaaaadca  ',
+    '  abbbddbbbaa ',
+    ' adbacbbacbda ',
+    ' abbaebbaebba ',
+    ' abbbbbbbbbba ',
+    ' acbbbccbbbca ',
+    '  abbcaacbba  ',
+    '   aaaccaaa   ',
+    '   adaaaada   ',
+    '  adbbddbbda  ',
+    ' abaabbbbaaba ',
+    'ada abddba ada',
+    ' a  abccba  a ',
+    '    abccba    ',
+    '   aabccbaa   ',
+    '  acbbaabbca  ',
+    '   aaa  aaa   ',
+  ]};
+const SPR_KRABBE = {
+  pal:{a:'#000000', b:'#ffde70', c:'#ffffff', d:'#ebebeb', e:'#703023', f:'#a44733', g:'#c4b381', h:'#ecd89c', i:'#323232', j:'#4b4b4b', k:'#13320c'},
+  grid:[
+    '     aa  aa    ',
+    '    abcaabca   ',
+    '    aadaaada   ',
+    '    aeeaaeea   ',
+    '     afaafa    ',
+    '    aafaafaa   ',
+    '   aeffeeffea  ',
+    '  aeffeffeffea ',
+    ' affffffffffffa',
+    ' affffaaaaffffa',
+    '  afeaggggaefa ',
+    '  aegghhhhggea ',
+    '   aehhhhhhea  ',
+    '    aghhhhga   ',
+    '   aiaaaaaaia  ',
+    ' aaijjakkajjia ',
+    'aefiijjaajjiiea',
+    ' affaijjjjiafa ',
+    'affaaaiiiiaaa  ',
+    ' aaaeeeeeeeeea ',
+    '  aeaaeaaeaafa ',
+    ' affaffaaffaffa',
+    '  aaaaa  aaaaa ',
+  ]};
+const SPR_KATZE = {
+  pal:{a:'#000000', b:'#dfc4b4', c:'#af9a8d', d:'#ab968a', e:'#576a5f', f:'#f4f4f4', g:'#bea799'},
+  grid:[
+    ' a        a   ',
+    'aba      aba  ',
+    'acba    abda  ',
+    'adbbaaaabbda  ',
+    'aadbbbbbbdaa  ',
+    'ababbbbbbaba  ',
+    'abbeabbeabba  ',
+    'adbfebbfebda  ',
+    'aabbbbbbbbaa  ',
+    'adbbbaabbbda  ',
+    ' adbbbbbbda   ',
+    '  aabbbbaa    ',
+    '   aaaaaa     ',
+    '   aabbaa     ',
+    '  abbaabba    ',
+    '  aabggbaa  a ',
+    '  abaaaabaaaba',
+    '  abbbbbbabba ',
+    '   abaabaaaa  ',
+    '  abbaabba    ',
+    '   aa  aa     ',
+  ]};
+const SPR_STIER = {
+  pal:{a:'#000000', b:'#837857', c:'#11100f', d:'#1a1817', e:'#322e2d', f:'#262322'},
+  grid:[
+    '  aa        aa  ',
+    ' aba        aba ',
+    'aba   aaaa   aba',
+    'aba aacddcaa aba',
+    'abaacddddddcaaba',
+    'abbacddddddcabba',
+    ' aaddddddddddaa ',
+    'adcdaddddddadcda',
+    'abacaaaddaaacaaa',
+    'abbceaddddaeca  ',
+    ' aacddddddddca  ',
+    '  acddddddddca  ',
+    '   acdfeefdca   ',
+    '    adaffada    ',
+    '  aaacbaabcaaa  ',
+    ' acddacbbcaddca ',
+    'acddddaaaaddddca',
+    'addcaccddccacdda',
+    ' addacddddcadda ',
+    ' aaddaddddaddaa ',
+    '  aaaaddddaaaa  ',
+    '    addaadda    ',
+    '    accaacca    ',
+    '     aa  aa     ',
+  ]};
+const SPR_EULE = {
+  pal:{a:'#000000', b:'#2b1e16', c:'#38271d', d:'#11100f', e:'#79695a', f:'#7b6c3d', g:'#9e8b4e'},
+  grid:[
+    '   aaaaaa    ',
+    ' aabccccbaa  ',
+    'abbbccccbbba ',
+    'acdccccccdca ',
+    'abdddccdddba ',
+    'abedeccedeba ',
+    'abeeecceeeba ',
+    ' abccccccba  ',
+    '  abfggfba   ',
+    '   aaffaaaaa ',
+    '  abcaaccccba',
+    '  acacccccba ',
+    '  accacaaaa  ',
+    '  aabaccca   ',
+    '  aaaabaaa   ',
+    ' agggaaggga  ',
+    '  aga  aga   ',
+    '   a    a    ',
+  ]};
+const SPR_ENTE = {
+  pal:{a:'#000000', b:'#57796e', c:'#3d554e', d:'#b7a674', e:'#e7d292', f:'#422e2a', g:'#d1c7c5', h:'#61433e'},
+  grid:[
+    '  aaaaaa  ',
+    ' abbbbbba ',
+    'abbbbbbbba',
+    'abbabbabba',
+    'abbabbabba',
+    'abbbccbbba',
+    'abbcddcbba',
+    ' acdeedca ',
+    '  adddda  ',
+    '  aaaaaa  ',
+    '  afggfa  ',
+    ' ahhffhha ',
+    'ahfahhafha',
+    'ahafhhfaha',
+    ' ahhhhhha ',
+    ' aeaaaaea ',
+    'adedaadeda',
+    ' aaa  aaa ',
+  ]};
+const SPR_HUND = {
+  pal:{a:'#000000', b:'#2d2d2d', c:'#353535', d:'#ffffff', e:'#ebebeb', f:'#cd7161', g:'#6b6b6b'},
+  grid:[
+    '    aa    aa    ',
+    '   abca  acba   ',
+    '  abccaaaaccba  ',
+    ' abccccccccccba ',
+    'abcacbbccbbcacba',
+    'abbabddccddbabba',
+    ' aaabeaccaebaaa ',
+    '   abccbbccba   ',
+    '    acbaabca    ',
+    '     aaaaaa     ',
+    '    abaffaba    ',
+    '   abccaaccba   ',
+    '  abccccccccba  ',
+    ' abcaacbbcaacba ',
+    ' abbaabggbaabba ',
+    '  aa abggba aa  ',
+    '    acbggbca    ',
+    '    acbggbca    ',
+    '    abcaacba    ',
+    '   abcbaabcba   ',
+    '  abccbaabccba  ',
+    '   aaaa  aaaa   ',
+  ]};
+const SPR_STELLA = {
+  pal:{a:'#000000', b:'#ecd89c', c:'#b8a87a', d:'#3c2315', e:'#e6ad8e', f:'#c8967c', g:'#6a449c', h:'#ffffff', i:'#593983', j:'#ebebeb', k:'#e4ac8d', l:'#464646', m:'#535353', n:'#6f3c37', o:'#b09a8e', p:'#dfc4b4', q:'#78524e'},
+  grid:[
+    '     a    a     ',
+    '    abaaaaba    ',
+    '     acbbca     ',
+    '     aaddaa     ',
+    '    acbccbba    ',
+    '   abbcbbbcba   ',
+    '  aabbbcbbbcaa  ',
+    ' aeccaabcaabcea ',
+    ' afbaghceghabfa ',
+    '  abeijeeijeba  ',
+    '  adeaeeeaeeda  ',
+    ' acaaeeeeekaaca ',
+    'aba  affffa  aba',
+    ' a   aaaaaa   a ',
+    '    almmmmla    ',
+    '   almmmmmmla   ',
+    '  aeeallllaeea  ',
+    '  afeaaaaaaefa  ',
+    '   aaannnnaaa   ',
+    '   aopaqqapoa   ',
+    '   aoppaappoa   ',
+    '    aaa  aaa    ',
+  ]};
+
+// Zeichnet ein Sprite mit eigener Palette, Füße auf (x,y) ausgerichtet
+function drawSprite(spr, x, y, alpha){
+  const g = spr.grid, br = g[0].length;
+  ctx.save();
+  if(alpha!=null) ctx.globalAlpha = alpha;
+  drawGrid(g, spr.pal, Math.round(x-br/2), Math.round(y-g.length), false, 1);
+  ctx.restore();
+}
+
 function spawnTripAnimal(){
   const def=pick(ANIMAL_KINDS);
   for(let tries=0; tries<8; tries++){        // freien Fleck in Spielernähe suchen
@@ -4513,42 +5238,72 @@ function tripAnimalsUpdate(dt){
   }
 }
 function animalTalk(a){
-  startDialog(lin([{ who:'sys', name:a.label, text:pick(a.lines) }]), {breakable:false});
+  const neuGesehen = tierNotieren(a.kind);
+  const zeilen = [{ who:'sys', name:a.label, text:pick(a.lines) }];
+  if(neuGesehen && state.flags.tierMission){
+    const n = state.tiereGesehen.length, ges = ANIMAL_KINDS.length;
+    zeilen.push({ who:'sys', name:'', text: n>=ges
+      ? 'Alle '+ges+' Tiere gesehen! Das musst du Tomás erzählen.'
+      : a.label+' notiert. ('+n+' von '+ges+')' });
+  }
+  startDialog(lin(zeilen), {breakable:false});
+}
+// Hält fest, mit welchen Tieren man schon geredet hat
+function tierNotieren(kind){
+  if(!state.tiereGesehen) state.tiereGesehen = [];
+  if(state.tiereGesehen.includes(kind)) return false;
+  state.tiereGesehen.push(kind);
+  if(state.tiereGesehen.length >= ANIMAL_KINDS.length){
+    const m = state.journal.missions.find(m=>m.key==='tiere');
+    if(m) m.done = true;
+  }
+  return true;
+}
+function tiereFehlen(){
+  if(!state.tiereGesehen) state.tiereGesehen = [];
+  return ANIMAL_KINDS.length - state.tiereGesehen.length;
 }
 // Zeichnet die drei Tierarten als kleine Rect-Bilder, mit weichem Ein-/Ausblenden
+// Stella steht an ihrem Camp – ein gezeichnetes Bild reicht für alle Richtungen
+const STELLA_GRIDS = { frames: {
+  down:[SPR_STELLA.grid], up:[SPR_STELLA.grid], left:[SPR_STELLA.grid] } };
+
+const TIER_SPRITES = {
+  reh:SPR_REH, frosch:SPR_FROSCH, hase:SPR_HASE, krabbe:SPR_KRABBE,
+  katze:SPR_KATZE, stier:SPR_STIER, eule:SPR_EULE, ente:SPR_ENTE, hund:SPR_HUND
+};
 function drawAnimal(a){
   const fade=Math.min(1, a.age/0.6, a.life/0.6);
+  const spr = TIER_SPRITES[a.kind];
+  if(!spr) return;
+  const wippen = (a.kind==='ente'||a.kind==='frosch')
+    ? Math.round(Math.sin(state.time*3+a.seed)*1.2) : 0;
+  const x = Math.round(a.x), y = Math.round(a.y)+wippen;
+  const hoch = spr.grid.length;
+  // Erscheinungen leuchten leicht – sonst gehen sie im Farbstich des Trips unter
+  const puls = 0.55 + Math.sin(state.time*2.2 + a.seed)*0.2;
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(x, y-hoch/2, 2, x, y-hoch/2, hoch*0.9);
+  g.addColorStop(0, 'rgba(255,244,210,'+(0.34*puls).toFixed(3)+')');
+  g.addColorStop(0.55,'rgba(255,226,170,'+(0.16*puls).toFixed(3)+')');
+  g.addColorStop(1, 'rgba(255,220,160,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y-hoch/2, hoch*0.9, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+  // Schatten und Tier
   ctx.globalAlpha=fade;
-  ctx.fillStyle='rgba(50,35,25,0.2)'; ctx.fillRect(Math.round(a.x)-4,Math.round(a.y)-1,8,2);
-  const x=Math.round(a.x), y=Math.round(a.y);
-  if(a.kind==='eichhoernchen'){
-    ctx.fillStyle='#a35a2f';
-    ctx.fillRect(x-4,y-5,6,5);                               // Körper
-    ctx.fillRect(x+1,y-7,4,4);                               // Kopf
-    ctx.fillStyle='#7a3f1e';
-    ctx.fillRect(x-6,y-9,3,6); ctx.fillRect(x-5,y-11,3,4);   // buschiger Schwanz
-    ctx.fillRect(x+2,y-8,1,2);                               // Ohr
-    ctx.fillStyle='#e8d9b5'; ctx.fillRect(x-3,y-3,3,2);      // heller Bauch
-    ctx.fillStyle='#2e2430'; ctx.fillRect(x+3,y-6,1,1);      // Auge
-  } else if(a.kind==='vogel'){
-    const by=y+Math.round(Math.sin(state.time*3+a.seed)*1.5)-2;   // hüpft leicht
-    ctx.fillStyle='#4f8fbf';
-    ctx.fillRect(x-3,by-4,6,4);                              // Körper
-    ctx.fillRect(x+2,by-6,3,3);                              // Kopf
-    ctx.fillStyle='#3a6f99'; ctx.fillRect(x-4,by-3,3,2);     // Flügel
-    ctx.fillStyle='#e8944a'; ctx.fillRect(x+5,by-5,2,1);     // Schnabel
-    ctx.fillStyle='#2e2430'; ctx.fillRect(x+3,by-5,1,1);     // Auge
-    ctx.fillStyle='#5d5346'; ctx.fillRect(x-1,by,1,2); ctx.fillRect(x+1,by,1,2);  // Beine
-  } else {
-    ctx.fillStyle='#c9602f';
-    ctx.fillRect(x-5,y-5,8,5);                               // Körper
-    ctx.fillRect(x+2,y-7,4,4);                               // Kopf
-    ctx.fillRect(x+3,y-9,1,2); ctx.fillRect(x+5,y-9,1,2);    // Ohren
-    ctx.fillRect(x-7,y-5,3,3);                               // Schwanz
-    ctx.fillStyle='#e8e0d0';
-    ctx.fillRect(x-8,y-4,3,2);                               // weiße Schwanzspitze
-    ctx.fillRect(x+4,y-4,2,1);                               // Schnauze
-    ctx.fillStyle='#2e2430'; ctx.fillRect(x+4,y-6,1,1);      // Auge
+  ctx.fillStyle='rgba(50,35,25,0.25)';
+  ctx.fillRect(x-4, Math.round(a.y)-1, 8, 2);
+  drawSprite(spr, a.x, a.y+wippen, fade);
+  // Kleine Funken, damit man sie auch aus dem Augenwinkel bemerkt
+  for(let i=0;i<3;i++){
+    const w = state.time*1.4 + a.seed + i*2.1;
+    const fx = x + Math.cos(w)*(hoch*0.55);
+    const fy = y - hoch*0.5 + Math.sin(w*1.3)*(hoch*0.4);
+    ctx.fillStyle = 'rgba(255,248,220,'+(0.5*fade*puls).toFixed(2)+')';
+    ctx.fillRect(Math.round(fx), Math.round(fy), 1, 1);
   }
   ctx.globalAlpha=1;
 }
@@ -4668,7 +5423,7 @@ function chatsUpdate(dt){
   chatCheckT -= dt;
   if(chatCheckT>0) return;
   chatCheckT = CHAT.CHECK;
-  const frei = e => !isChatting(e) && (e.chatCool||0)<=0;
+  const frei = e => !isChatting(e) && (e.chatCool||0)<=0 && e.phase!=='drin';
   // Wanderer untereinander
   for(let i=0;i<wanderers.length;i++){
     const a=wanderers[i];
@@ -4756,20 +5511,121 @@ function drawChatBubble(e){
   ctx.restore();
 }
 
+
+/* ============ WEGENETZ FÜR DIE WANDERER ============
+   Statt quer über die Wiese laufen die Leute jetzt auf den Wegen.
+   Dafür wird aus den Wegflächen ein Raster von Knoten gebaut, durch das
+   per Breitensuche ein Weg gesucht wird. Vom Weg biegen sie nur für die
+   letzten Meter zu ihrem eigenen Zelt ab. */
+let wegKacheln = null, wegIndex = null;
+function baueWegnetz(){
+  wegKacheln = []; wegIndex = new Map();
+  for(let ty=0; ty<MAPH; ty++)
+    for(let tx=0; tx<MAPW; tx++)
+      if(tileIsPath(tx,ty)){
+        wegIndex.set(tx+','+ty, wegKacheln.length);
+        wegKacheln.push({tx,ty});
+      }
+}
+function wegKachelBei(x,y){
+  if(!wegKacheln) baueWegnetz();
+  let best=null, bd=1e9;
+  for(const k of wegKacheln){
+    const d=(k.tx*TILE+8-x)**2 + (k.ty*TILE+8-y)**2;
+    if(d<bd){ bd=d; best=k; }
+  }
+  return best;
+}
+// Breitensuche über die Wegkacheln
+function wegSuche(von, nach){
+  if(!wegKacheln) baueWegnetz();
+  if(!von || !nach) return [];
+  const start = von.tx+','+von.ty, ziel = nach.tx+','+nach.ty;
+  if(!wegIndex.has(start) || !wegIndex.has(ziel)) return [];
+  const vorher = new Map([[start,null]]);
+  const q=[start];
+  while(q.length){
+    const k=q.shift();
+    if(k===ziel) break;
+    const [tx,ty]=k.split(',').map(Number);
+    for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+      const n=(tx+dx)+','+(ty+dy);
+      if(wegIndex.has(n) && !vorher.has(n)){ vorher.set(n,k); q.push(n); }
+    }
+  }
+  if(!vorher.has(ziel)) return [];
+  const pfad=[]; let k=ziel;
+  while(k){ const [tx,ty]=k.split(',').map(Number); pfad.unshift({x:tx*TILE+8, y:ty*TILE+8}); k=vorher.get(k); }
+  // Nur jeden dritten Punkt behalten – sonst laufen sie sehr kleinschrittig
+  const kurz=[];
+  for(let i=0;i<pfad.length;i+=3) kurz.push(pfad[i]);
+  if(pfad.length && kurz[kurz.length-1]!==pfad[pfad.length-1]) kurz.push(pfad[pfad.length-1]);
+  return kurz;
+}
+// Ist an dieser Stelle Platz für eine Figur?
+function istFrei(x,y){
+  const box={x:x-5,y:y-7,w:10,h:7};
+  for(const s of solids) if(rectsOverlap(box,s)) return false;
+  return true;
+}
+/* --- Vorausschau: erkennt Hindernisse, bevor man hineinläuft --- */
+function ausweichRichtung(w, vx, vy){
+  const blick = 14;                                  // so weit schaut er voraus
+  if(istFrei(w.x + vx*blick, w.y + vy*blick)) return [vx,vy];
+  // Nach links und rechts abbiegen, in wachsenden Winkeln
+  for(const grad of [30, -30, 55, -55, 80, -80, 110, -110]){
+    const r = grad*Math.PI/180;
+    const nx = vx*Math.cos(r) - vy*Math.sin(r);
+    const ny = vx*Math.sin(r) + vy*Math.cos(r);
+    if(istFrei(w.x + nx*blick, w.y + ny*blick)) return [nx,ny];
+  }
+  return null;                                        // rundum dicht
+}
+
+/* --- Zeltzuordnung: jeder Wanderer hat ein eigenes Zelt --- */
+function alleZelte(){
+  return objects.filter(o=>o.type==='tent');
+}
+function zeltEingang(z){
+  return { x: z.ax, y: z.base + 8 };                  // direkt vor der Öffnung
+}
+
 function spawnWanderer(){
   const entry=pick(EXITS);
-  const dest=pick(EXITS.filter(e=>e.id!==entry.id));       // immer ein anderer Ausgang
-  wanderers.push({
+  const zelte=alleZelte();
+  const zelt = zelte.length ? pick(zelte) : null;
+  const w = {
     x:entry.x+(Math.random()*24-12), y:entry.y,
     facing:'down', moving:true, animT:Math.random()*2, frame:0,
     pal:randomWandererPal(), gridSet:HERO_GRIDS,
-    entry:entry.id, dest:dest.id,
-    route:buildRoute(entry,dest),
-    travelT:0, stuckT:0,
+    entry:entry.id, zelt,                       // sein eigenes Zelt
+    phase:'zumZelt',                            // zumZelt | drin | zumAusgang
+    drinT:0, route:[],
+    travelT:0, stuckT:0, warteT:0,
     tastes: rollTastes(),
     chat: null, chatCool: 2+Math.random()*4,
-    speed: 34+Math.random()*18                             // jeder trödelt anders
-  });
+    speed: 34+Math.random()*18
+  };
+  planeRoute(w);
+  wanderers.push(w);
+  return w;
+}
+// Legt die Route für die aktuelle Phase fest: über die Wege, zuletzt quer zum Ziel
+function planeRoute(w){
+  let ziel;
+  if(w.phase==='zumZelt' && w.zelt) ziel = zeltEingang(w.zelt);
+  else {
+    const aus = pick(EXITS);
+    ziel = { x:aus.x, y:aus.y };
+  }
+  const vonK = wegKachelBei(w.x, w.y);
+  const nachK = wegKachelBei(ziel.x, ziel.y);
+  const ueberWeg = wegSuche(vonK, nachK);
+  w.route = [];
+  if(vonK) w.route.push({x:vonK.tx*TILE+8, y:vonK.ty*TILE+8});   // erst auf den Weg
+  w.route = w.route.concat(ueberWeg);
+  w.route.push(ziel);                                            // dann zum Ziel
+  w.travelT = 0;
 }
 // Schlanke Kollision nur gegen feste Objekte – Randwände gelten hier nicht,
 // damit Wanderer die Karte durch die Ausgänge betreten und verlassen können.
@@ -4792,60 +5648,80 @@ function moveWanderer(w, dx, dy){
   }
 }
 function wanderersUpdate(dt){
-  // Nachschub, wenn der Bestand unter das Minimum fällt
-  // (kurzes Intervall: beim Durchgangsverkehr despawnen oft mehrere fast gleichzeitig)
   if(wanderers.length<WANDERER_MIN){
     wandererRespawnT-=dt;
     if(wandererRespawnT<=0){ wandererRespawnT=0.25+Math.random()*0.5; spawnWanderer(); }
   }
   for(let i=wanderers.length-1;i>=0;i--){
     const w=wanderers[i];
-    // Wer gerade plaudert, bleibt stehen (Plauderzeit zählt nicht als Wegzeit)
     if(isChatting(w)){ w.moving=false; continue; }
-    // Failsafe: Wer nach 60 s immer noch unterwegs ist, hat eben
-    // abseits der Kamera einen anderen Weg gefunden.
+
+    // Im Zelt: kurz verschwunden, dann kommt er wieder heraus
+    if(w.phase==='drin'){
+      w.drinT-=dt;
+      w.moving=false;
+      if(w.drinT<=0){
+        w.phase='zumAusgang';
+        if(w.zelt){ const e=zeltEingang(w.zelt); w.x=e.x; w.y=e.y; }
+        planeRoute(w);
+      }
+      continue;
+    }
     w.travelT+=dt;
-    if(w.travelT>60){ wanderers.splice(i,1); continue; }
+    if(w.travelT>90){ wanderers.splice(i,1); continue; }
+
     const wp=w.route[0];
-    if(!wp){ wanderers.splice(i,1); continue; }
+    if(!wp){
+      if(w.phase==='zumZelt'){ w.phase='drin'; w.drinT=4+Math.random()*8; }
+      else wanderers.splice(i,1);
+      continue;
+    }
     const dx=wp.x-w.x, dy=wp.y-w.y, dist=Math.hypot(dx,dy);
-    if(dist<6){
+    if(dist<7){
       w.route.shift();
-      if(!w.route.length){ wanderers.splice(i,1); }        // Ziel-Ausgang erreicht
+      if(!w.route.length && w.phase==='zumZelt'){
+        w.phase='drin'; w.drinT=4+Math.random()*8;    // verschwindet im Zelt
+      } else if(!w.route.length){
+        wanderers.splice(i,1);                        // Karte verlassen
+      }
+      continue;
+    }
+    // Vorausschau: rechtzeitig abbiegen, statt erst beim Anstoßen
+    let vx=dx/dist, vy=dy/dist;
+    const aus = ausweichRichtung(w, vx, vy);
+    if(aus){ vx=aus[0]; vy=aus[1]; w.warteT=0; }
+    else {
+      // Rundum blockiert: kurz stehen bleiben und neu planen
+      w.warteT+=dt; w.moving=false;
+      if(w.warteT>0.6){ w.warteT=0; planeRoute(w); }
       continue;
     }
     w.moving=true;
-    const vx=dx/dist, vy=dy/dist;
     w.facing = Math.abs(vx)>Math.abs(vy) ? (vx>0?'right':'left') : (vy>0?'down':'up');
     const ox=w.x, oy=w.y;
     moveWanderer(w, vx*w.speed*dt, vy*w.speed*dt);
-    // Steckt er fest (Zelt/Baum im Weg)? Losrütteln und notfalls
-    // die Zwischenpunkte überspringen (direkt Richtung Ausgang).
     if(Math.hypot(w.x-ox, w.y-oy) < w.speed*dt*0.3){
       w.stuckT+=dt;
-      if(w.stuckT>0.7){
-        w.stuckT=0;
-        w.x+=(Math.random()-0.5)*16; w.y+=(Math.random()-0.5)*16;
-        if(w.route.length>1) w.route=[w.route[w.route.length-1]];
-      }
+      if(w.stuckT>0.8){ w.stuckT=0; planeRoute(w); }
     } else w.stuckT=0;
     w.animT+=dt; w.frame=Math.floor(w.animT*7)%4;
   }
 }
-// Startbestand: 10 Wanderer, bereits mitten auf ihren Wegen verteilt
-// (als wäre der Durchgangsverkehr schon eine Weile im Gange)
+
 function seedWanderers(){
   wanderers.length=0;
   wandererRespawnT=0;
   for(let i=0;i<WANDERER_MIN;i++){
     spawnWanderer();
     const w=wanderers[wanderers.length-1];
-    const entry=EXITS.find(e=>e.id===w.entry), dest=EXITS.find(e=>e.id===w.dest);
-    const t=0.15+Math.random()*0.7;
-    const p=freeSpotNear(lerp(entry.x,dest.x,t), lerp(entry.y,dest.y,t));
-    if(p){ w.x=p.x; w.y=p.y; }
+    // Beim Spielstart stehen sie schon irgendwo auf ihrer Route, nicht am Rand
+    if(w.route.length>1){
+      const ziel = w.route[Math.floor(Math.random()*w.route.length)];
+      const p = freeSpotNear(ziel.x, ziel.y);
+      if(p){ w.x=p.x; w.y=p.y; }
+    }
     w.chatCool = Math.random()*6;                          // nicht alle gleichzeitig loslegen
-    w.route=[w.route[w.route.length-1]];                   // nur noch das Ziel ansteuern
+    planeRoute(w);                                         // Route ab der neuen Position
   }
 }
 
@@ -4932,6 +5808,7 @@ function saveGame(slot){
     scene: state.scene,
     onBike: state.onBike,
     coffee: { vorrat: coffee.vorrat },
+    tiereGesehen: (state.tiereGesehen||[]).slice(),
     flashlight: state.flashlight,
     outdoorPos: state.outdoorPos
   };
@@ -5000,6 +5877,7 @@ function loadGame(s){
     state.clock.day = Math.max(1, s.clock?.day ?? 1);
     state.scene = s.scene || (s.indoor ? 'tent' : 'camp');
     state.onBike = !!s.onBike;
+    state.tiereGesehen = Array.isArray(s.tiereGesehen) ? s.tiereGesehen.slice() : [];
     // Schlange und Team frisch aufbauen, nur der Vorrat bleibt erhalten
     coffee.queue.length = 0; coffee.playerIdx = -1; coffee.nachschub = 0;
     coffee.vorrat = (s.coffee && typeof s.coffee.vorrat==='number') ? s.coffee.vorrat : 24;
@@ -5865,6 +6743,7 @@ function startGame(){
   state.whiteAlpha=1; state.whiteTarget=0.88;   // "Es ist sooo hell..."
   state.clock.min = 14*60; state.clock.day = 1; // Ankunft am Nachmittag
   state.scene = 'camp'; state.flashlight = false; state.onBike = false;
+  state.tiereGesehen = [];
   state.fade = 0; state.fadeDir = 0; state.outdoorPos = null;
   state.expo = exposure();
   player.pal=playerPal();
@@ -6169,7 +7048,8 @@ function draw(){
     list.push({y:n.y, f:wob(n.x,n.y,base)});
   }
   for(const a of tripAnimals) list.push({y:a.y, f:()=>drawAnimal(a)});
-  for(const w of wanderers) list.push({y:w.y, f:wob(w.x,w.y,()=>drawEntity(w))});
+  // Wer gerade in seinem Zelt ist, wird nicht gezeichnet
+  for(const w of wanderers) if(w.phase!=='drin') list.push({y:w.y, f:wob(w.x,w.y,()=>drawEntity(w))});
   list.sort((a,b)=>a.y-b.y);
   for(const it of list) it.f();
   // Sprechblasen über allen Figuren, damit sie niemand verdeckt
@@ -6411,7 +7291,7 @@ buildFood();
 buildWald();
 buildCoffeeTeam();
 addNPC('harvey','Harvey',120,116,HARVEY_PAL,HARVEY_GRIDS,PORTRAIT_HARVEY,PORTRAIT_HARVEY_PAL,harveyTalk);
-addNPC('friend','???',588,468,FRIEND_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
+addNPC('friend','???',588,468,SPR_STELLA.pal,STELLA_GRIDS,PORTRAIT_PLAYER,PORTRAIT_FRIEND_PAL,friendTalk);
 addNPC('kobi','Kobi',632,86,KOBI_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_KOBI_PAL,kobiTalk);
 addNPC('tomas','Tomás',604,90,TOMAS_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_TOMAS_PAL,tomasTalk);
 addNPC('momo','Momo',252,432,MOMO_PAL,HERO_GRIDS,PORTRAIT_PLAYER,PORTRAIT_MOMO_PAL,momoTalk);
